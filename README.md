@@ -1,47 +1,122 @@
-KMITL Budget Disbursement Support AI Chatbot
+# 🎓 KMITL Budget AI Chatbot
 
-Course: Computer Engineering Project Preparation (CEPP) - 01276390
+**AI Chatbot สำหรับตอบคำถามด้านการเบิกจ่ายงบประมาณและการจัดซื้อจัดจ้างของ สจล.**
 
-Institute: King Mongkut's Institute of Technology Ladkrabang (KMITL)
+> Course: Computer Engineering Project Preparation (CEPP) — 01276390  
+> King Mongkut's Institute of Technology Ladkrabang (KMITL)
 
-1. Project Information
+---
 
-Thai Title: การพัฒนา AI Chatbot เพื่อสนับสนุนการเบิกจ่ายงบประมาณของสถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง
+## 🤔 ระบบนี้ทำอะไร?
 
-English Title: Development of AI Chatbot for Supporting Budget Disbursement at KMITL
+แทนที่จะให้บุคลากรค้นหาคำตอบจากเอกสาร PDF หลายสิบไฟล์ด้วยตัวเอง ระบบนี้จะ **อ่านเอกสาร PDF ทั้งหมดและตอบคำถามโดยอ้างอิงจากข้อมูลจริง** พร้อมระบุว่าข้อมูลมาจากหน้าไหนของเอกสารไหน
 
-2. Problem Statement and Objectives (Section 5.1)
+## 🏗️ สถาปัตยกรรมระบบ (RAG Architecture)
 
-2.1 Problem Statement
+```
+📄 PDF ระเบียบการ (Docs/)
+    ↓  PyMuPDF (รองรับภาษาไทย)
+📝 ตัดแบ่งเป็น Chunks (1000 ตัวอักษร)
+    ↓  HuggingFace Embeddings (Local — ฟรี ไม่ติดโควตา)
+🗄️ ChromaDB (Vector Database เก็บในเครื่อง)
+    ↓  ผู้ใช้ถามคำถาม → ดึง 12 ชิ้นที่เกี่ยวข้องที่สุด
+🤖 Gemma 3 4B via Google AI API (ฟรี 14,400 req/วัน)
+    ↓
+💬 คำตอบภาษาไทย + แสดงแหล่งอ้างอิง PDF ต้นฉบับ
+```
 
-Complexity of Regulations: Budget disbursement regulations at KMITL involve numerous specific details and conditions, leading to confusion among staff and frequent document errors.
+---
 
-Delayed Processes: Errors in document preparation result in multiple revision cycles, significantly delaying the actual disbursement of funds.
+## ⚙️ Technology Stack
 
-Difficulties in Data Retrieval: Manuals and official announcements are typically stored across various PDF files, making it challenging to find precise answers to specific queries.
+| Component | Technology |
+|---|---|
+| UI Framework | [Streamlit](https://streamlit.io/) |
+| PDF Loader | PyMuPDF (รองรับภาษาไทยได้ดี) |
+| Text Embedding | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (Local) |
+| Vector Database | [ChromaDB](https://www.trychroma.com/) |
+| LLM | `gemma-3-4b-it` via Google AI API |
+| RAG Framework | [LangChain](https://www.langchain.com/) |
 
-2.2 Objectives
+---
 
-To develop an AI Chatbot capable of providing accurate and rapid answers regarding KMITL's budget disbursement regulations.
+## 🚀 วิธีติดตั้งและรัน
 
-To minimize document preparation errors by providing interactive, real-time guidance to personnel.
+### 1. Clone และติดตั้ง
 
-To implement Retrieval-Augmented Generation (RAG) technology for efficient knowledge management of regulatory documents.
+```bash
+git clone https://github.com/Ratthabhumi/CEIPP.git
+cd CEIPP
+pip install -r requirements.txt
+```
 
-3. Related Work (Section 5.2 - Background)
+### 2. ตั้งค่า API Key
 
-Domestic: Review LLM implementations in Thai universities, such as Prince of Songkla University (PSU) and Mae Fah Luang University (MFU).
+```bash
+# คัดลอก template
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
 
-International: Research RAG (Retrieval-Augmented Generation) applications in financial compliance and legal document processing.
+# แล้วเปิดไฟล์ .streamlit/secrets.toml และใส่ API Key
+# รับ Key ฟรีได้ที่: https://aistudio.google.com/
+```
 
-Technology Stack: Google Gemini Pro API, LangChain Framework, and ChromaDB (Vector Database).
+### 3. เพิ่มเอกสาร PDF
 
-4. Initial Project Plan (8-Month Timeline)
+วาง PDF ระเบียบการทั้งหมดลงในโฟลเดอร์ `Docs/`
 
-Months 1-2: Data collection of disbursement regulations and user requirement analysis.
+### 4. รันระบบ
 
-Months 3-4: RAG system architecture design and Vector Database preparation.
+```bash
+streamlit run app.py
+```
 
-Months 5-6: Frontend development (Streamlit) and Gemini Pro API integration.
+> กดปุ่ม **"โหลดเอกสารจากโฟลเดอร์ Docs"** ครั้งแรกเพื่อสร้าง Vector Database (ทำแค่ครั้งเดียว)
 
-Months 7-8: User Acceptance Testing (UAT), accuracy refinement, and final report preparation.
+---
+
+## 📊 ผลการประเมินความแม่นยำ
+
+ใช้ระบบ **LLM-as-a-Judge** (คล้าย RAGAS) ให้ AI ประเมินตัวเองใน 3 ด้าน:
+
+| เมตริก | คะแนน | ความหมาย |
+|---|---|---|
+| **Faithfulness** | 4.7 / 5 | ไม่มั่วข้อมูล อ้างอิงจากเอกสารจริง |
+| **Answer Relevance** | 4.3 / 5 | ตอบตรงประเด็น |
+| **Context Precision** | 4.0 / 5 | ดึงเอกสารถูกมาให้ AI |
+| **ความเร็วตอบ** | ~4.3 วินาที | ใช้งานได้จริง |
+
+### รันการทดสอบ
+
+```bash
+python evaluate.py       # สร้าง evaluation_report.json
+python ai_evaluator.py   # ให้ AI ให้คะแนนผลลัพธ์
+```
+
+---
+
+## 📁 โครงสร้างโปรเจกต์
+
+```
+CEIPP/
+├── app.py                  # Streamlit UI หลัก
+├── rag_pipeline.py         # RAG Logic (Embedding + Retrieval + LLM)
+├── build_db.py             # Script สร้าง Vector DB ครั้งแรก
+├── evaluate.py             # Automated Testing
+├── ai_evaluator.py         # LLM-as-a-Judge Scoring
+├── golden_dataset.json     # ชุดข้อสอบสำหรับทดสอบ
+├── requirements.txt        # Python Dependencies
+├── Docs/                   # ⚠️ วาง PDF ระเบียบการที่นี่ (ไม่ขึ้น GitHub)
+├── chroma_db/              # ⚠️ Vector DB (auto-generated, ไม่ขึ้น GitHub)
+└── .streamlit/
+    ├── secrets.toml        # ⚠️ API Key (ไม่ขึ้น GitHub!)
+    └── secrets.toml.example # Template วิธีตั้งค่า
+```
+
+---
+
+## 🔮 แผนพัฒนาต่อ
+
+- [ ] เพิ่ม PDF ระเบียบการให้ครอบคลุม
+- [ ] Dashboard แสดงผลคะแนน Evaluation
+- [ ] เพิ่มชุดข้อสอบใน Golden Dataset
+- [ ] รองรับการค้นหาแบบ Hybrid Search (BM25 + Vector)
