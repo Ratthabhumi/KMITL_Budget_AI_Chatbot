@@ -1,0 +1,14 @@
+# environments
+venv/
+env/
+.env
+
+# python artifacts
+__pycache__/
+*.pyc
+
+# DB and large files
+chroma_db/
+
+# Secrets
+.streamlit/secrets.toml
