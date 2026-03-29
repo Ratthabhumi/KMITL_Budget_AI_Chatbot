@@ -11,18 +11,12 @@ __pycache__/
 *.pyc
 *.pyo
 
-# ===== Vector Database (ไฟล์ใหญ่มาก สร้างใหม่ได้จาก build_db.py) =====
-chroma_db/
-
-# ===== Log & Generated Files (ข้อมูลส่วนตัว) =====
+# ===== Log & Temp Files =====
 feedback_log.json
 evaluation_report.json
 error_log.txt
-
-# ===== Docs (PDF ต้นฉบับ อาจมี sensitive content) =====
-Docs/
-
-# ===== Misc =====
 models.txt
 pip_packages.txt
-*.txt
+
+# ===== Docs (PDF ต้นฉบับ) =====
+Docs/
