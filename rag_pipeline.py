@@ -1,9 +1,10 @@
 import os
 import glob
 import streamlit as st
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
@@ -31,7 +32,7 @@ def initialize_vector_db(api_key):
     # 1. โหลดเอกสาร PDF
     for i, pdf_file in enumerate(pdf_files):
         try:
-            loader = PyPDFLoader(pdf_file)
+            loader = PyMuPDFLoader(pdf_file)
             documents.extend(loader.load())
         except Exception as e:
             st.warning(f"ไม่สามารถโหลดไฟล์ {pdf_file} ได้: {e}")
@@ -43,9 +44,9 @@ def initialize_vector_db(api_key):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = text_splitter.split_documents(documents)
     
-    # 3. สร้าง Embeddings และจัดเก็บลงฐานข้อมูลเรื่อยๆ
-    progress_bar.progress(0.95, text="กำลังฝังเวกเตอร์ (Embedding) ไปยัง ChromaDB... (กระบวนการนี้จะคุยกับ Gemini API และอาจใช้เวลาหลายนาที)")
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    # 3. สร้าง Embeddings ด้วย Local Model (ไม่ต้องใช้ API ของ Google อีกต่อไป)
+    progress_bar.progress(0.95, text="กำลังโหลดโมเดลภาษาไทย (Local Embedding) และบันทึกลง ChromaDB...")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     
     # วิธีนี้จะสร้าง folder ชื่อ chroma_db เพื่อเก็บข้อมูลไว้เปิดครั้งต่อไปได้เลย
     import time
@@ -68,19 +69,20 @@ def get_qa_chain(api_key):
         return None
         
     os.environ["GOOGLE_API_KEY"] = api_key
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     
     # โหลดจากฐานข้อมูลเดิมที่เคยบันทึกไว้
     vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
     
-    # ให้ค้นหา 5 เอกสารที่เกี่ยวข้องที่สุด (ปรับแต่งได้ตามความเหมาะสม)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+    # ให้ค้นหา 15 เอกสารที่เกี่ยวข้องที่สุด (เนื่องจาก Gemini มี Context Window ที่ใหญ่มาก สามารถอ่านข้อมูลได้เยอะ)
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 12})
     
     # ตั้งค่าโมเดล Gemini สำหรับใช้อ่านบริบทและตอบคำถาม
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0) 
+    llm = ChatGoogleGenerativeAI(model="gemma-3-4b-it", temperature=0)
     
     # กำหนด Prompt (หน้าที่ของ AI) ให้ชัดเจน
-    system_prompt = (
+    # หมายเหตุ: ใช้ human message เดียวเพราะ Gemma models ไม่รองรับ system message
+    combined_prompt = (
         "คุณคือ AI ผู้ช่วยอัจฉริยะของสถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง (สจล.) "
         "หน้าที่หลักของคุณคือการตอบคำถามเกี่ยวกับ 'ระเบียบการเบิกจ่ายงบประมาณและการจัดซื้อจัดจ้าง' ให้กับบุคลากรและนักศึกษาอย่างถูกต้องและแม่นยำที่สุด\n\n"
         "คำสั่งสำคัญ:\n"
@@ -89,12 +91,13 @@ def get_qa_chain(api_key):
         "3. หากอ้างอิงข้อมูลได้ ให้อธิบายเป็นข้อๆ ให้ผู้ใช้อ่านเข้าใจง่าย เป็นภาษาไทยที่เป็นทางการแต่เป็นมิตร\n"
         "4. หากสามารถระบุชื่อเอกสารหรือคู่มือที่อ้างอิงตาม Context ได้ให้ระบุไว้ด้วยก็จะดีมาก\n\n"
         "=== ข้อมูลอ้างอิงจากระบบ (Context) ===\n"
-        "{context}"
+        "{context}\n\n"
+        "=== คำถามจากผู้ใช้ ===\n"
+        "{input}"
     )
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{input}"),
+        ("human", combined_prompt),
     ])
     
     # สร้าง Chain (ประกอบร่างโมเดลกับ Prompt เข้าด้วยกัน)

@@ -1,14 +1,28 @@
-# environments
+# ===== SECRETS (ห้ามขึ้น GitHub เด็ดขาด!) =====
+.streamlit/secrets.toml
+
+# ===== Virtual Environment =====
 venv/
 env/
 .env
 
-# python artifacts
+# ===== Python Cache =====
 __pycache__/
 *.pyc
+*.pyo
 
-# DB and large files
+# ===== Vector Database (ไฟล์ใหญ่มาก สร้างใหม่ได้จาก build_db.py) =====
 chroma_db/
 
-# Secrets
-.streamlit/secrets.toml
+# ===== Log & Generated Files (ข้อมูลส่วนตัว) =====
+feedback_log.json
+evaluation_report.json
+error_log.txt
+
+# ===== Docs (PDF ต้นฉบับ อาจมี sensitive content) =====
+Docs/
+
+# ===== Misc =====
+models.txt
+pip_packages.txt
+*.txt

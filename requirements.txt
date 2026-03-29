@@ -1,8 +1,9 @@
 streamlit
 langchain-google-genai
 google-generativeai
-pypdf
+pymupdf
 chromadb
 langchain
 langchain-community
 langchain-chroma
+sentence-transformers
