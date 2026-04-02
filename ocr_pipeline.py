@@ -16,12 +16,7 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
     
     # วบรวมชื่อรุ่นที่เป็นไปได้ (Gemini API ภูมิภาคต่างๆ อาจใช้ชื่อรุ่นต่างกัน)
     # เราจะลอง 1.5 Flash เป็นหลักเพราะฟรีและเก่งรูปภาพ
-    models_to_try = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-2.0-flash-exp", # ตัวใหม่ล่าสุด (ถ้ามี)
-        "gemini-pro-vision"    # รุ่นเก่า (เป็น fallback สุดท้าย)
-    ]
+    models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-latest"]
     
     prompt = """
     คุณคือผู้เชี่ยวชาญด้านบัญชีและการตรวจสอบเอกสารทางการเงิน

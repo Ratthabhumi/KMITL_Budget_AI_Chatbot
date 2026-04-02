@@ -244,9 +244,9 @@ elif page == "📊 แดชบอร์ดผู้ดูแล (Admin)":
     for item in eval_data:
         scores = item.get("evaluation_scores")
         if scores and not isinstance(scores, str) and "error" not in scores: # ตรวจสอบเผื่อมี Error
-            f_scores.append(scores.get("Faithfulness", 0))
-            r_scores.append(scores.get("Answer_Relevance", 0))
-            c_scores.append(scores.get("Context_Precision", 0))
+            f_scores.append(scores.get("Faithfulness") or 0)
+            r_scores.append(scores.get("Answer_Relevance") or 0)
+            c_scores.append(scores.get("Context_Precision") or 0)
 
     if f_scores:
         has_scores = True
