@@ -15,23 +15,13 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
         
     os.environ["GOOGLE_API_KEY"] = api_key
     
-    # ลองใช้ gemini-2.0-flash (รุ่นล่าสุด) หรือ fallback เป็น 1.5 รุ่นต่างๆ
-    # ใช้ try-except ซ้อนกันเพื่อให้แน่ใจว่าจะมีรุ่นที่รันได้ในสภาพแวดล้อมนั้นๆ
-    try:
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
-    except:
-        try:
-            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
-        except:
-            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
-    
     # แปลงไบต์ภาพเป็น Base64
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    
+
     # กำหนด Prompt สำหรับการทำ OCR และสกัดข้อมูลลง JSON Schema
     sys_prompt = """
     คุณคือผู้เชี่ยวชาญด้านบัญชีและการตรวจสอบเอกสารทางการเงิน
-    หน้าที่ของคุณคืออ่านรูปภาพใบเสร็จรับเงิน หรือใบกำกับภาษีของประเทศไทย 
+    หน้าที่ของคุณคืออ่านรูปภาพใบเสร็จรับเงิน หรือใบกำกับภาษีของประเทศไทย
     และดึงข้อมูลที่สำคัญออกมาในรูปแบบ JSON เท่านั้น ห้ามตอบนอกเหนือจากรูปแบบที่กำหนด
 
     รูปแบบ JSON ที่ต้องการ:
@@ -48,7 +38,7 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
         ]
     }
     """
-    
+
     message = HumanMessage(
         content=[
             {"type": "text", "text": sys_prompt},
@@ -58,21 +48,31 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
             }
         ]
     )
-    
-    try:
-        response = llm.invoke([message])
-        content = response.content
-        
-        # แกะ JSON ออกจากข้อความ (เผื่อโมเดลตอบติด Markdown ```json มาด้วย)
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group())
-            return data
-        else:
-            return {"error": "ไม่สามารถแปลงผลลัพธ์เป็น JSON ได้", "raw_content": content}
-            
-    except Exception as e:
-        return {"error": str(e)}
+
+    # ลองแต่ละโมเดลตามลำดับ (Gemma API Key มักจะมีสิทธิ์ใช้รุ่นเหล่านี้)
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            llm = ChatGoogleGenerativeAI(model=model_name, temperature=0)
+            response = llm.invoke([message])
+            content = response.content
+
+            # แกะ JSON ออกจากข้อความ (เผื่อโมเดลตอบติด Markdown ```json มาด้วย)
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+            else:
+                return {"error": "ไม่สามารถแปลงผลลัพธ์เป็น JSON ได้", "raw_content": content}
+        except Exception as e:
+            last_error = e
+            # ถ้าเป็น quota/rate-limit error ให้ลองโมเดลถัดไป ไม่ใช่หยุด
+            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "quota" in str(e).lower():
+                continue
+            # error อื่นๆ หยุดทันที
+            return {"error": str(e)}
+
+    return {"error": f"โมเดลทุกตัวถูก rate-limit: {str(last_error)}"}
 
 def verify_receipt_rules(qa_chain, ocr_data):
     """
