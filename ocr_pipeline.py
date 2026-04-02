@@ -1,0 +1,97 @@
+import os
+import base64
+import json
+import re
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
+
+def extract_receipt_data(image_bytes: bytes, api_key: str):
+    """
+    รับรูปภาพใบเสร็จเป็นก้อนไบต์ (bytes) ส่งเข้าไปวิเคราะห์ผ่าน Gemini 1.5 Flash 
+    เพื่อดึงข้อมูลให้ออกมาในรูปแบบ JSON ตามโครงสร้างที่กำหนด
+    """
+    if not api_key:
+        raise ValueError("API Key is required for OCR extraction.")
+        
+    os.environ["GOOGLE_API_KEY"] = api_key
+    
+    # ลองใช้ gemini-1.5-flash-latest ก่อน หรือ fallback เป็นชื่อปกติ
+    # ตั้ง temperature=0 เพื่อให้ได้ผลลัพธ์ที่ตายตัวและแม่นยำมากที่สุด
+    try:
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+    except:
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+    
+    # แปลงไบต์ภาพเป็น Base64
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    
+    # กำหนด Prompt สำหรับการทำ OCR และสกัดข้อมูลลง JSON Schema
+    sys_prompt = """
+    คุณคือผู้เชี่ยวชาญด้านบัญชีและการตรวจสอบเอกสารทางการเงิน
+    หน้าที่ของคุณคืออ่านรูปภาพใบเสร็จรับเงิน หรือใบกำกับภาษีของประเทศไทย 
+    และดึงข้อมูลที่สำคัญออกมาในรูปแบบ JSON เท่านั้น ห้ามตอบนอกเหนือจากรูปแบบที่กำหนด
+
+    รูปแบบ JSON ที่ต้องการ:
+    {
+        "vendor_name": "ชื่อร้านค้า หรือ บริษัทที่ออกใบเสร็จ (ถ้าหาไม่เจอให้ใส่ null)",
+        "tax_id": "เลขประจำตัวผู้เสียภาษี (ถ้าเป็นใบกำกับภาษี, ถ้าหาไม่เจอให้ใส่ null)",
+        "transaction_date": "วันที่ออกใบเสร็จ (ถ้าหาไม่เจอให้ใส่ null)",
+        "total_amount": ตัวเลขยอดรวมสุทธิ (เป็น float ตัวเลขเท่านั้น ไม่มีลูกน้ำ),
+        "items": [
+            {
+                "description": "ชื่อรายการสินค้า",
+                "price": ตัวเลขราคาสินค้านั้นๆ (float)
+            }
+        ]
+    }
+    """
+    
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": sys_prompt},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+            }
+        ]
+    )
+    
+    try:
+        response = llm.invoke([message])
+        content = response.content
+        
+        # แกะ JSON ออกจากข้อความ (เผื่อโมเดลตอบติด Markdown ```json มาด้วย)
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+            return data
+        else:
+            return {"error": "ไม่สามารถแปลงผลลัพธ์เป็น JSON ได้", "raw_content": content}
+            
+    except Exception as e:
+        return {"error": str(e)}
+
+def verify_receipt_rules(qa_chain, ocr_data):
+    """
+    นำข้อมูลที่สกัดได้จากใบเสร็จ ไปตรวจสอบความถูกต้องเทียบกับกฎระเบียบ 
+    โดยใช้ RAG (QA Chain) ดึงกฎและให้ AI สรุปผล
+    """
+    if "error" in ocr_data:
+        return f"ไม่สามารถตรวจสอบคำขอได้เนื่องจาก: {ocr_data['error']}"
+        
+    vendor_name = ocr_data.get("vendor_name", "ไม่ระบุ")
+    total_amount = ocr_data.get("total_amount", 0.0)
+    
+    # ตั้งคำถามให้ RAG สรุปผลตามระเบียบ
+    question = (
+        f"มีใบเสร็จยอดเงิน {total_amount} บาท จากร้าน '{vendor_name}' "
+        f"ตามระเบียบพัสดุและงบประมาณของสถาบัน การเบิกจ่ายยอดเงินเท่านี้ต้องใช้เอกสารหลักฐานอะไรเพิ่มเติมบ้าง "
+        f"และบิลนี้มีข้อมูลครบถ้วนพอจะเบิกได้หรือไม่?"
+    )
+    
+    try:
+        # ใช้ qa_chain ตัวหลักของระบบประมวลผลดึง Policy มาตอบ
+        response = qa_chain.invoke({"input": question})
+        return response["answer"]
+    except Exception as e:
+        return f"เกิดข้อผิดพลาดในการตรวจสอบตามกฎระเบียบ: {str(e)}"
