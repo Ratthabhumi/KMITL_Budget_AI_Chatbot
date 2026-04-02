@@ -12,8 +12,6 @@ __pycache__/
 *.pyo
 
 # ===== Log & Temp Files =====
-feedback_log.json
-evaluation_report.json
 error_log.txt
 models.txt
 pip_packages.txt
@@ -27,5 +25,4 @@ Golden_Dataset_Kuk/
 
 # ===== Databases & Generated Outputs =====
 chroma_db/
-retrieval_eval_report.json
 *.log
