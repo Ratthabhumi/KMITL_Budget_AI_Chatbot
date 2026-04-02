@@ -20,3 +20,7 @@ pip_packages.txt
 
 # ===== Docs (PDF ต้นฉบับ) =====
 Docs/
+
+# ===== Data & Agent Tooling =====
+Golden_Dataset_Kuk/
+.claude/

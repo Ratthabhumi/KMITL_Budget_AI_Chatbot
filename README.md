@@ -1,122 +1,118 @@
 # 🎓 KMITL Budget AI Chatbot
-
 **AI Chatbot สำหรับตอบคำถามด้านการเบิกจ่ายงบประมาณและการจัดซื้อจัดจ้างของ สจล.**
 
-> Course: Computer Engineering Project Preparation (CEPP) — 01276390  
-> King Mongkut's Institute of Technology Ladkrabang (KMITL)
+**Course:** Computer Engineering Project Preparation (CEPP) — 01276390  
+**King Mongkut's Institute of Technology Ladkrabang (KMITL)**
 
 ---
 
 ## 🤔 ระบบนี้ทำอะไร?
+แทนที่จะให้บุคลากรค้นหาคำตอบจากเอกสาร PDF หลายสิบไฟล์ด้วยตัวเอง ควานหาตามหน้าต่างๆ ให้เสียเวลา ระบบนี้จะทำหน้าที่ **อ่านเอกสาร PDF ทั้งหมดและตอบคำถามโดยอ้างอิงจากข้อมูลจริง** พร้อมระบุอย่างชัดเจนว่าข้อมูลอ้างอิงมาจาก โฟลเดอร์ไหน ไฟล์อะไร และพิกัดหน้าที่เท่าไหร่
 
-แทนที่จะให้บุคลากรค้นหาคำตอบจากเอกสาร PDF หลายสิบไฟล์ด้วยตัวเอง ระบบนี้จะ **อ่านเอกสาร PDF ทั้งหมดและตอบคำถามโดยอ้างอิงจากข้อมูลจริง** พร้อมระบุว่าข้อมูลมาจากหน้าไหนของเอกสารไหน
+---
 
 ## 🏗️ สถาปัตยกรรมระบบ (RAG Architecture)
 
-```
+```text
 📄 PDF ระเบียบการ (Docs/)
-    ↓  PyMuPDF (รองรับภาษาไทย)
+    ↓  (ใช้ PyMuPDF: ตัดและอ่านภาษาไทยได้อย่างแม่นยำ)
 📝 ตัดแบ่งเป็น Chunks (1000 ตัวอักษร)
-    ↓  HuggingFace Embeddings (Local — ฟรี ไม่ติดโควตา)
+    ↓  (HuggingFace Embeddings (Local) — ไม่ต้องใช้ API, ไม่ติดโควตา)
 🗄️ ChromaDB (Vector Database เก็บในเครื่อง)
-    ↓  ผู้ใช้ถามคำถาม → ดึง 12 ชิ้นที่เกี่ยวข้องที่สุด
-🤖 Gemma 3 4B via Google AI API (ฟรี 14,400 req/วัน)
+    ↓  (ผู้ใช้ถามคำถาม → ดึง 12 เนื้อหาที่เกี่ยวข้องและใกล้เคียงที่สุดออกมา)
+🤖 Gemma 3 4B via Google AI API (ฟรีปริมาณสูงถึง 14,400 req/วัน)
     ↓
-💬 คำตอบภาษาไทย + แสดงแหล่งอ้างอิง PDF ต้นฉบับ
+💬 คำตอบภาษาไทยที่สรุปมาให้แล้ว + แสดงแหล่งอ้างอิง PDF ต้นฉบับ
 ```
 
 ---
 
 ## ⚙️ Technology Stack
-
 | Component | Technology |
-|---|---|
-| UI Framework | [Streamlit](https://streamlit.io/) |
-| PDF Loader | PyMuPDF (รองรับภาษาไทยได้ดี) |
-| Text Embedding | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (Local) |
-| Vector Database | [ChromaDB](https://www.trychroma.com/) |
-| LLM | `gemma-3-4b-it` via Google AI API |
-| RAG Framework | [LangChain](https://www.langchain.com/) |
+| --- | --- |
+| **UI Framework** | Streamlit |
+| **PDF Loader** | PyMuPDF |
+| **Text Embedding** | `sentence-transformers` (paraphrase-multilingual-MiniLM-L12-v2) |
+| **Vector Database** | ChromaDB (`langchain-chroma`) |
+| **LLM** | gemma-3-4b-it (via Google AI API) |
+| **RAG Framework** | LangChain |
 
 ---
 
 ## 🚀 วิธีติดตั้งและรัน
-
-### 1. Clone และติดตั้ง
-
+**1. Clone และติดตั้ง Dependencies**
 ```bash
 git clone https://github.com/Ratthabhumi/CEIPP.git
 cd CEIPP
 pip install -r requirements.txt
 ```
 
-### 2. ตั้งค่า API Key
-
+**2. ตั้งค่า API Key**
 ```bash
-# คัดลอก template
+# คัดลอก template ของ secrets
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-
-# แล้วเปิดไฟล์ .streamlit/secrets.toml และใส่ API Key
-# รับ Key ฟรีได้ที่: https://aistudio.google.com/
 ```
+> เปิดไฟล์ `.streamlit/secrets.toml` และนำ Google Gemini API Key มาใส่  
+> *(สามารถขอ Key ฟรีได้ที่: [Google AI Studio](https://aistudio.google.com/))*
 
-### 3. เพิ่มเอกสาร PDF
+**3. จัดเตรียมโฟลเดอร์เอกสาร PDF**
+ลากไฟล์ PDF เอกสารระเบียบการทั้งหมดไปวางในโฟลเดอร์ `Docs/`
 
-วาง PDF ระเบียบการทั้งหมดลงในโฟลเดอร์ `Docs/`
-
-### 4. รันระบบ
-
+**4. เปิดใช้งานหน้าเว็บแอปพลิเคชัน**
 ```bash
 streamlit run app.py
 ```
-
-> กดปุ่ม **"โหลดเอกสารจากโฟลเดอร์ Docs"** ครั้งแรกเพื่อสร้าง Vector Database (ทำแค่ครั้งเดียว)
+> **หมายเหตุ:** ในการรันหน้าเว็บครั้งแรก ต้องกดปุ่ม **"โหลดเอกสารจากโฟลเดอร์ Docs"** ซ้ายมือบนหน้าจอ เพื่อให้ระบบสกัดและแปลงฐานข้อมูลเข้าสู่ Vector Database (หลังจากทำครั้งแรกแล้ว ไม่ต้องกดซ้ำอีกในครั้งถัดไป)
 
 ---
 
-## 📊 ผลการประเมินความแม่นยำ
+## 📊 ผลการประเมินความแม่นยำ (Evaluation)
+โปรเจกต์นี้มีระบบตรวจสอบและประเมินผลลัพธ์ของ AI ในการตอบและค้นหาอย่างครบถ้วน:
 
-ใช้ระบบ **LLM-as-a-Judge** (คล้าย RAGAS) ให้ AI ประเมินตัวเองใน 3 ด้าน:
+### 1. การประเมินผลลัพธ์คำตอบ (LLM-as-a-Judge)
+ใช้ AI ทำหน้าที่เสมือนเป็นกรรมการ (คล้ายเฟรมเวิร์กของ Ragas) ช่วยตรวจสอบคำตอบใน 3 ด้าน ดังนี้:
+- **Faithfulness (4.7 / 5):** ไม่มั่วข้อมูล (No Hallucination) ยึดตามเอกสารจริง
+- **Answer Relevance (4.3 / 5):** คำตอบตรงประเด็นที่ถาม
+- **Context Precision (4.0 / 5):** ดึงเนื้อหาขึ้นมาได้มีความถูกต้อง
+- **ความเร็วตอบสนอง:** ~4.3 วินาที (รวดเร็วเพียงพอต่อการใช้งานจริง)
 
-| เมตริก | คะแนน | ความหมาย |
-|---|---|---|
-| **Faithfulness** | 4.7 / 5 | ไม่มั่วข้อมูล อ้างอิงจากเอกสารจริง |
-| **Answer Relevance** | 4.3 / 5 | ตอบตรงประเด็น |
-| **Context Precision** | 4.0 / 5 | ดึงเอกสารถูกมาให้ AI |
-| **ความเร็วตอบ** | ~4.3 วินาที | ใช้งานได้จริง |
+### 2. การประเมินประสิทธิภาพการค้นหา (Retrieval Evaluation)
+แยกระบบประเมินวัดความสามารถของ Embedding และ Vector DB ว่าทำหน้าที่ดึงข้อมูลที่เกี่ยวข้องมาได้แม่นยำเพียงใด:
+- **Recall@K:** มีคำตอบอยู่ในชุดข้อมูลที่ดึงมาให้ AI มากสุดแค่ไหน
+- **Precision@K:** สัดส่วนเปอร์เซ็นต์เอกสารที่เกี่ยวข้องกันจริง ในเอกสารทั้งหมดที่หยิบมา
+- **MRR (Mean Reciprocal Rank):** เอกสารที่มีประโยชน์ถูกจัดให้อยู่อันดับที่ดีหรือไม่
 
-### รันการทดสอบ
-
+### ชุดคำสั่งรันระบบประเมินผลอัตโนมัติ
 ```bash
-python evaluate.py       # สร้าง evaluation_report.json
-python ai_evaluator.py   # ให้ AI ให้คะแนนผลลัพธ์
+python retrieval_eval.py  # ทดสอบเฉพาะระบบค้นหาไฟล์ (จะได้ไฟล์ retrieval_eval_report.json)
+python evaluate.py        # รันถามตอบและเปรียบเทียบคำตอบ (จะได้ไฟล์ evaluation_report.json)
+python ai_evaluator.py    # ให้โมเดล AI ให้คะแนนผลลัพธ์ว่าตอบได้ดีแค่ไหน
 ```
 
 ---
 
 ## 📁 โครงสร้างโปรเจกต์
-
-```
+```text
 CEIPP/
 ├── app.py                  # Streamlit UI หลัก
-├── rag_pipeline.py         # RAG Logic (Embedding + Retrieval + LLM)
-├── build_db.py             # Script สร้าง Vector DB ครั้งแรก
-├── evaluate.py             # Automated Testing
-├── ai_evaluator.py         # LLM-as-a-Judge Scoring
-├── golden_dataset.json     # ชุดข้อสอบสำหรับทดสอบ
-├── requirements.txt        # Python Dependencies
-├── Docs/                   # ⚠️ วาง PDF ระเบียบการที่นี่ (ไม่ขึ้น GitHub)
-├── chroma_db/              # ⚠️ Vector DB (auto-generated, ไม่ขึ้น GitHub)
+├── rag_pipeline.py         # RAG Logic (ประกอบร่าง Embedding + Retrieval + LLM และปรับแต่ง Prompt)
+├── build_db.py             # Script สร้างฐานเวกเตอร์ (Vector DB)
+├── evaluate.py             # Automated Testing สำหรับรันและสร้าง Log ประจำเซสชัน
+├── ai_evaluator.py         # Script LLM-as-a-Judge สำหรับรันประเมินคะแนน
+├── retrieval_eval.py       # Script วัดประสิทธิภาพการค้นหาเอกสาร (Recall, MRR) เชิงลึก
+├── golden_dataset.json     # ชุดข้อสอบจำลองและคำตอบที่ถูกต้องจากการระเบียบจริงของ สจล.
+├── requirements.txt        # ไฟล์กำหนด Dependencies แพลตฟอร์มต่างๆ
+├── Docs/                   # ⚠️ โฟลเดอร์ที่เก็บไฟล์ PDF เล่มระเบียบการต่างๆ (ห้ามนำขึ้น GitHub)
+├── chroma_db/              # ⚠️ โฟลเดอร์ฐานข้อมูล Vector ส่วนตัวในเครื่อง (ห้ามนำขึ้น GitHub)
 └── .streamlit/
-    ├── secrets.toml        # ⚠️ API Key (ไม่ขึ้น GitHub!)
-    └── secrets.toml.example # Template วิธีตั้งค่า
+    ├── secrets.toml        # ⚠️ ข้อมูลรหัส API จำกัดสิทธิ์ (ห้ามนำขึ้น GitHub เด็ดขาด!)
+    └── secrets.toml.example # แบบฟอร์มจำลองสำหรับให้ตั้งค่า API เอง
 ```
 
 ---
 
-## 🔮 แผนพัฒนาต่อ
-
-- [ ] เพิ่ม PDF ระเบียบการให้ครอบคลุม
-- [ ] Dashboard แสดงผลคะแนน Evaluation
-- [ ] เพิ่มชุดข้อสอบใน Golden Dataset
-- [ ] รองรับการค้นหาแบบ Hybrid Search (BM25 + Vector)
+## 🔮 แผนการพัฒนาในอนาคต (Roadmap)
+- [ ] เพิ่มไฟล์ PDF ระเบียบการให้ครอบคลุมการรวบรวมข้อมูลทุกกรมกอง
+- [ ] พัฒนา Dashboard แสดงผลคะแนน Evaluation แยกหน้าแบบกราฟฟิกสวยงามสำหรับผู้ดูแล (Admin)
+- [ ] ขยายชุดคำถามใน Golden Dataset ให้ทดสอบได้รัดกุมมากขึ้น
+- [ ] เพิ่มฟีเจอร์ Hybrid Search (BM25 + Vector) เพื่อความแม่นยำสูงสุดในศัพท์ที่เฉพาะทาง
