@@ -45,9 +45,22 @@ def run_evaluation(dataset_file="golden_dataset.json", report_file="evaluation_r
         return
 
     results = []
+    completed_ids = set()
+    if os.path.exists(report_file):
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                results = json.load(f)
+                completed_ids = {r.get("question_id") for r in results if "question_id" in r}
+                print(f"✅ โหลดข้อมูลเก่าที่รันไปแล้ว {len(completed_ids)} ข้อ")
+        except Exception:
+            pass
+
     total_questions = len(dataset)
     
     for i, item in enumerate(dataset, 1):
+        if i in completed_ids:
+            continue
+            
         question = item.get("question", "")
         expected = item.get("expected_answer", "")
         
@@ -73,7 +86,7 @@ def run_evaluation(dataset_file="golden_dataset.json", report_file="evaluation_r
             ai_answer = f"Error: ขออภัยเกิดข้อผิดพลาด {str(e)}"
             print(f"  ⚠️ ประมวลผลผิดพลาด: {e}")
             
-        # บันทึกผลลัพธ์ลงรายงาน
+        # บันทึกผลลัพธ์ลงรายงาน และเซฟทันที
         results.append({
             "question_id": i,
             "question": question,
@@ -82,11 +95,13 @@ def run_evaluation(dataset_file="golden_dataset.json", report_file="evaluation_r
             "context_texts": context_texts,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
+        
+        with open(report_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=4)
+            
         time.sleep(2) # หน่วงเวลาพักเล็กน้อยเพื่อหลีกเลี่ยง API Rate Limit
 
-    # เขียนรายงานลงไฟล์
-    with open(report_file, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=4)
+    # (เซฟทุกข้อแล้ว ไม่ต้องเซฟตรงนี้อีก)
         
     print("\n" + "="*50)
     print(f"✅ การทดสอบเสร็จสิ้น! บันทึกรายงานผลไปที่ไฟล์ {report_file} เรียบร้อยแล้ว")

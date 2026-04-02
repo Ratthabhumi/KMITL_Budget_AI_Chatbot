@@ -14,12 +14,10 @@ if not api_key:
     print("❌ ไม่พบ API Key กรุณาระบุใน .streamlit/secrets.toml หรือ Environment Variables")
     exit(1)
 
-import google.generativeai as genai
-genai.configure(api_key=api_key)
-
-# ปิด Warning ของ Google GenAI
 import warnings
 warnings.filterwarnings("ignore")
+
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 def llm_as_a_judge(report_file="evaluation_report.json"):
     print("="*60)
@@ -39,10 +37,11 @@ def llm_as_a_judge(report_file="evaluation_report.json"):
         print("กรุณารันคำสั่ง 'python evaluate.py' ใหม่อีกครั้งก่อนใช้งานตัวประเมินนี้ครับ")
         return
 
-    # ใช้ Gemma 3 4B เป็นกรรมการ (ฟรี ไม่จำกัด)
-    judge_model = genai.GenerativeModel('gemma-3-4b-it')
+    # ใช้ Gemma 3 4B ผ่าน LangChain_Google_GenAI เพิ่อเลี่ยง Deprecation Warning
+    os.environ["GOOGLE_API_KEY"] = api_key
+    judge_model = ChatGoogleGenerativeAI(model="gemma-3-4b-it", temperature=0)
     
-    graded_results = []
+    graded_results_count = 0
     
     for i, item in enumerate(data, 1):
         q_id = item["question_id"]
@@ -84,11 +83,18 @@ def llm_as_a_judge(report_file="evaluation_report.json"):
         }}
         """
         
+        # ตรวจสอบว่าเคยประเมินผ่านไปแล้วหรือยัง
+        score_dict = item.get("evaluation_scores", {})
+        if score_dict and "error" not in score_dict:
+            # ข้ามข้อที่ประเมินไปแล้ว
+            graded_results_count += 1
+            continue
+        
         try:
-            # Gemma ไม่รองรับ JSON mode ให้ใช้ regex แกะ JSON จาก text แทน
-            response = judge_model.generate_content(prompt)
+            # ใช้ LangChain invoke
+            response = judge_model.invoke(prompt)
             # แกะ JSON ออกมาจากข้อความที่ตอบกลับมา
-            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+            json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
             if json_match:
                 judgement = json.loads(json_match.group())
             else:
@@ -100,21 +106,24 @@ def llm_as_a_judge(report_file="evaluation_report.json"):
             print(f"  💬 เหตุผลจากกรรมการ: {judgement.get('Reasoning')}")
             
             item["evaluation_scores"] = judgement
-            graded_results.append(item)
+            graded_results_count += 1
+            
+            # บันทึกทับไฟล์เดิมทันทีเพื่อ Auto-save
+            with open(report_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
             
         except Exception as e:
             print(f"  ❌ กรรมการประมวลผลคลาดเคลื่อน: {e}")
             item["evaluation_scores"] = {"error": str(e)}
-            graded_results.append(item)
+            # แม้จะ error ก็ auto-save เผื่อกลับมาดู
+            with open(report_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
             
         time.sleep(15) # หน่วงเวลาให้นานขึ้นเพื่อไม่ให้ Token limit เตะ
             
-    # เซฟกลับทับไฟล์เดิม (จะมียัดก้อน evaluation_scores ต่อท้ายให้อัตโนมัติในแต่ละข้อ)
-    with open(report_file, "w", encoding="utf-8") as f:
-        json.dump(graded_results, f, ensure_ascii=False, indent=4)
-        
+    # (เซฟไปทีละข้อแล้ว)
     print("\n" + "="*60)
-    print("🎉 การประเมินเสร็จสิ้น! บันทึกคะแนนลงในไฟล์ evaluation_report.json เรียบร้อยครับ")
+    print(f"🎉 การประเมินเสร็จสิ้น! บันทึกคะแนนสำเร็จทั้งหมด {graded_results_count} ข้อลงในไฟล์ {report_file} เรียบร้อยครับ")
     print("="*60)
 
 if __name__ == "__main__":

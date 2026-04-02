@@ -24,3 +24,8 @@ Docs/
 # ===== Data & Agent Tooling =====
 Golden_Dataset_Kuk/
 .claude/
+
+# ===== Databases & Generated Outputs =====
+chroma_db/
+retrieval_eval_report.json
+*.log

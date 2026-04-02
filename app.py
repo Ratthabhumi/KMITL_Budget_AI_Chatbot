@@ -3,7 +3,6 @@ import os
 import json
 from datetime import datetime
 import pandas as pd
-import google.generativeai as genai
 from rag_pipeline import initialize_vector_db, get_qa_chain
 
 # การตั้งค่าหน้ากระดาษ (Page Configuration)
@@ -53,10 +52,7 @@ with st.sidebar:
         else:
             api_key = api_key_input 
 
-        if api_key:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemma-3-12b-it')
-        else:
+        if not api_key:
             st.warning("⚠️ ไม่พบ API Key กรุณาตรวจสอบไฟล์ secrets.toml หรือระบุที่ Sidebar")
             st.stop()
             
