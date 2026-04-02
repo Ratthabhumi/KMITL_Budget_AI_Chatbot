@@ -40,7 +40,7 @@ with st.sidebar:
     
     # 📌 ส่วนเลือกหน้าจอการทำงาน (Navigation)
     st.markdown("### 📌 เมนูระบบ")
-    page = st.radio("เลือกหน้าต่างการทำงาน:", ["💬 แชทบอท (Chatbot)", "📊 แดชบอร์ดผู้ดูแล (Admin)"])
+    page = st.radio("เลือกหน้าต่างการทำงาน:", ["💬 แชทบอท (Chatbot)", "📸 ตรวจสอบใบเสร็จ (Receipt Verification)", "📊 แดชบอร์ดผู้ดูแล (Admin)"])
     st.divider()
     
     api_key_input = st.text_input("ระบุ Gemini API Key (หากไม่มีใน secrets.toml):", type="password")
@@ -152,6 +152,54 @@ if page == "💬 แชทบอท (Chatbot)":
                             source_docs = []
 
         st.session_state.messages.append({"role": "assistant", "content": response, "source_documents": source_docs if 'source_docs' in locals() else []})
+
+# ==========================================
+# 📸 หน้า 1.5: Receipt Verification
+# ==========================================
+elif page == "📸 ตรวจสอบใบเสร็จ (Receipt Verification)":
+    st.title("📸 ตรวจสอบใบเสร็จด้วย AI (Receipt Verification)")
+    st.markdown("ระบบจะใช้ AI (OCR) อ่านข้อมูลจากรูปภาพใบเสร็จเพื่อตรวจสอบความถูกต้องและเช็กเงื่อนไขกับระเบียบเบิกจ่ายของ KMITL แบบอัตโนมัติ")
+    
+    if not gemini_api_key:
+        st.warning("⚠️ กรุณากรอก API Key ที่ Sidebar ด้านซ้ายก่อนค่ะ")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์รูปภาพใบเสร็จ", type=["png", "jpg", "jpeg"])
+        with c2:
+            camera_file = st.camera_input("📷 หรือเปิดกล้องถ่ายใบเสร็จ")
+            
+        target_image = camera_file if camera_file else uploaded_file
+        
+        if target_image:
+            st.image(target_image, caption="รายการเอกสารที่แนบ", width=400)
+            
+            if st.button("🔍 ตรวจสอบและประมวลผล", type="primary"):
+                from ocr_pipeline import extract_receipt_data, verify_receipt_rules
+                
+                with st.spinner("⏳ กำลังใช้ Gemini 1.5 Flash (OCR Engine) สกัดตัวอักษรและโครงสร้างใบเสร็จ..."):
+                    img_bytes = target_image.getvalue()
+                    ocr_data = extract_receipt_data(img_bytes, gemini_api_key)
+                    
+                if "error" in ocr_data and "raw_content" not in ocr_data:
+                    st.error(f"❌ ระบบประมวลผลภาพผิดพลาด: {ocr_data['error']}")
+                else:
+                    st.success("✅ สกัดแยกหมวดหมู่ข้อมูลเอกสารสำเร็จ")
+                    st.markdown("### 📝 ข้อมูลที่สกัดได้จากใบเสร็จ (Extracted Data)")
+                    st.json(ocr_data)
+                    
+                    st.markdown("### ⚖️ ผลการวิเคราะห์และตรวจสอบความสมบูรณ์")
+                    with st.spinner("⏳ กำลังเปรียบเทียบข้อมูลกับฐานข้อมูลระเบียบการเบิกจ่าย (RAG Verification)..."):
+                        qa_chain = get_qa_chain(gemini_api_key)
+                        if qa_chain is None:
+                            st.error("⚠️ ยังขาดฐานข้อมูลระเบียบการ! รบกวนกดปุ่ม 'โหลดเอกสาร' ด้านซ้ายมือก่อน")
+                        else:
+                            ai_analysis = verify_receipt_rules(qa_chain, ocr_data)
+                            st.info(ai_analysis)
+                            
+                            st.markdown("---")
+                            st.markdown("### 📬 จำลองระบบอนุมัติอัตโนมัติ (Automated Workflow)")
+                            st.button("✅ ยืนยันความสมบูรณ์ และจัดส่งเข้าสู่ระบบ DMS ของสถาบัน", type="primary")
 
 # ==========================================
 # 📊 หน้า 2: Admin Dashboard
