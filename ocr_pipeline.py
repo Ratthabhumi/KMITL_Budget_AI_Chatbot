@@ -15,12 +15,15 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
         
     os.environ["GOOGLE_API_KEY"] = api_key
     
-    # ลองใช้ gemini-1.5-flash-latest ก่อน หรือ fallback เป็นชื่อปกติ
-    # ตั้ง temperature=0 เพื่อให้ได้ผลลัพธ์ที่ตายตัวและแม่นยำมากที่สุด
+    # ลองใช้ gemini-2.0-flash (รุ่นล่าสุด) หรือ fallback เป็น 1.5 รุ่นต่างๆ
+    # ใช้ try-except ซ้อนกันเพื่อให้แน่ใจว่าจะมีรุ่นที่รันได้ในสภาพแวดล้อมนั้นๆ
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
     except:
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+        try:
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+        except:
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
     
     # แปลงไบต์ภาพเป็น Base64
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
