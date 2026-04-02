@@ -6,4 +6,9 @@ chromadb
 langchain
 langchain-community
 langchain-chroma
+langchain-text-splitters
+langchain-huggingface
+langchain
 sentence-transformers
+scikit-learn
+numpy
