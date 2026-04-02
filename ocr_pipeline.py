@@ -2,26 +2,30 @@ import os
 import base64
 import json
 import re
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
+import google.generativeai as genai
 
 def extract_receipt_data(image_bytes: bytes, api_key: str):
     """
-    รับรูปภาพใบเสร็จเป็นก้อนไบต์ (bytes) ส่งเข้าไปวิเคราะห์ผ่าน Gemini 1.5 Flash 
-    เพื่อดึงข้อมูลให้ออกมาในรูปแบบ JSON ตามโครงสร้างที่กำหนด
+    ใช้ google.generativeai SDK โดยตรง เพื่อลดปัญหา Model Name Mapping ใน LangChain
+    สกัดข้อมูลใบเสร็จออกมาเป็น JSON
     """
     if not api_key:
         raise ValueError("API Key is required for OCR extraction.")
         
-    os.environ["GOOGLE_API_KEY"] = api_key
+    genai.configure(api_key=api_key)
     
-    # แปลงไบต์ภาพเป็น Base64
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-
-    # กำหนด Prompt สำหรับการทำ OCR และสกัดข้อมูลลง JSON Schema
-    sys_prompt = """
+    # วบรวมชื่อรุ่นที่เป็นไปได้ (Gemini API ภูมิภาคต่างๆ อาจใช้ชื่อรุ่นต่างกัน)
+    # เราจะลอง 1.5 Flash เป็นหลักเพราะฟรีและเก่งรูปภาพ
+    models_to_try = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-2.0-flash-exp", # ตัวใหม่ล่าสุด (ถ้ามี)
+        "gemini-pro-vision"    # รุ่นเก่า (เป็น fallback สุดท้าย)
+    ]
+    
+    prompt = """
     คุณคือผู้เชี่ยวชาญด้านบัญชีและการตรวจสอบเอกสารทางการเงิน
-    หน้าที่ของคุณคืออ่านรูปภาพใบเสร็จรับเงิน หรือใบกำกับภาษีของประเทศไทย
+    หน้าที่ของคุณคืออ่านรูปภาพใบเสร็จรับเงิน หรือใบกำกับภาษีของประเทศไทย 
     และดึงข้อมูลที่สำคัญออกมาในรูปแบบ JSON เท่านั้น ห้ามตอบนอกเหนือจากรูปแบบที่กำหนด
 
     รูปแบบ JSON ที่ต้องการ:
@@ -38,46 +42,39 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
         ]
     }
     """
-
-    message = HumanMessage(
-        content=[
-            {"type": "text", "text": sys_prompt},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
-            }
-        ]
-    )
-
-    # ลองแต่ละโมเดลตามลำดับ (Gemma API Key มักจะมีสิทธิ์ใช้รุ่นเหล่านี้)
-    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
+    
+    # แปลงภาพ
+    contents = [
+        prompt,
+        {"mime_type": "image/jpeg", "data": image_bytes}
+    ]
+    
     last_error = None
-    for model_name in models_to_try:
+    for model_id in models_to_try:
         try:
-            llm = ChatGoogleGenerativeAI(model=model_name, temperature=0)
-            response = llm.invoke([message])
-            content = response.content
-
-            # แกะ JSON ออกจากข้อความ (เผื่อโมเดลตอบติด Markdown ```json มาด้วย)
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            model = genai.GenerativeModel(model_id)
+            response = model.generate_content(contents)
+            
+            # สกัด JSON ออกจาก Text
+            text = response.text
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group())
             else:
-                return {"error": "ไม่สามารถแปลงผลลัพธ์เป็น JSON ได้", "raw_content": content}
+                return {"error": "ไม่สามารถแปลงผลลัพธ์เป็น JSON ได้", "raw_content": text}
+                
         except Exception as e:
-            last_error = e
-            # ถ้าเป็น quota/rate-limit error ให้ลองโมเดลถัดไป ไม่ใช่หยุด
-            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e) or "quota" in str(e).lower():
-                continue
-            # error อื่นๆ หยุดทันที
-            return {"error": str(e)}
-
-    return {"error": f"โมเดลทุกตัวถูก rate-limit: {str(last_error)}"}
+            last_error = str(e)
+            if "not found" in last_error.lower() or "404" in last_error:
+                continue # ลองรุ่นถัดไป
+            else:
+                return {"error": f"เกิดข้อผิดพลาดในการรัน {model_id}: {last_error}"}
+                
+    return {"error": f"ไม่พบรุ่นโมเดลที่ใช้งานได้ (404 ทั้งหมด): {last_error}"}
 
 def verify_receipt_rules(qa_chain, ocr_data):
     """
-    นำข้อมูลที่สกัดได้จากใบเสร็จ ไปตรวจสอบความถูกต้องเทียบกับกฎระเบียบ 
-    โดยใช้ RAG (QA Chain) ดึงกฎและให้ AI สรุปผล
+    ตรวจสอบข้อมูลใบเสร็จเทียบกับกฎระเบียบ (ยังคงใช้ QA Chain เพราะเป็น Text-based)
     """
     if "error" in ocr_data:
         return f"ไม่สามารถตรวจสอบคำขอได้เนื่องจาก: {ocr_data['error']}"
@@ -85,7 +82,6 @@ def verify_receipt_rules(qa_chain, ocr_data):
     vendor_name = ocr_data.get("vendor_name", "ไม่ระบุ")
     total_amount = ocr_data.get("total_amount", 0.0)
     
-    # ตั้งคำถามให้ RAG สรุปผลตามระเบียบ
     question = (
         f"มีใบเสร็จยอดเงิน {total_amount} บาท จากร้าน '{vendor_name}' "
         f"ตามระเบียบพัสดุและงบประมาณของสถาบัน การเบิกจ่ายยอดเงินเท่านี้ต้องใช้เอกสารหลักฐานอะไรเพิ่มเติมบ้าง "
@@ -93,8 +89,7 @@ def verify_receipt_rules(qa_chain, ocr_data):
     )
     
     try:
-        # ใช้ qa_chain ตัวหลักของระบบประมวลผลดึง Policy มาตอบ
-        response = qa_chain.invoke({"input": question})
-        return response["answer"]
+        result = qa_chain.invoke({"input": question})
+        return result["answer"]
     except Exception as e:
         return f"เกิดข้อผิดพลาดในการตรวจสอบตามกฎระเบียบ: {str(e)}"
