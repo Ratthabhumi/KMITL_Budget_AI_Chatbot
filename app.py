@@ -4,7 +4,11 @@ import json
 import time
 from datetime import datetime
 import pandas as pd
-from rag_pipeline import initialize_vector_db, get_qa_chain
+from rag_pipeline import initialize_vector_db, get_qa_chain, _get_vectorstore
+
+@st.cache_resource(show_spinner=False)
+def get_cached_qa_chain(openrouter_key, gemini_key, mode, provider):
+    return get_qa_chain(openrouter_key, gemini_api_key=gemini_key, mode=mode, provider=provider)
 from ocr_pipeline import extract_receipt_data, verify_receipt_rules
 
 # --- Page Configuration ---
@@ -173,6 +177,7 @@ with st.sidebar:
     if not os.path.exists("./chroma_db_v2"):
         st.info("🔄 กำลังสร้างฐานข้อมูลเอกสาร (ครั้งแรก อาจใช้เวลา 1-2 นาที)...")
         initialize_vector_db(openrouter_api_key or gemini_api_key)
+        st.cache_resource.clear()  # clear cache ให้โหลด vectorstore ใหม่
         st.success("✅ ฐานข้อมูลพร้อมใช้งาน!")
         st.rerun()
     
@@ -217,7 +222,7 @@ if "💬" in page:
                 
                 for p_name in providers_to_try:
                     try:
-                        qa = get_qa_chain(openrouter_api_key, gemini_api_key=gemini_api_key, mode="chat", provider=p_name)
+                        qa = get_cached_qa_chain(openrouter_api_key, gemini_api_key, "chat", p_name)
                         if qa:
                             res = qa.invoke({"input": prompt})
                             ans, ctx = res["answer"], res.get("context", [])
@@ -275,7 +280,7 @@ elif "📸" in page:
                     
                     for p_name in providers_to_try:
                         try:
-                            qa = get_qa_chain(openrouter_api_key, gemini_api_key=gemini_api_key, mode="audit", provider=p_name)
+                            qa = get_cached_qa_chain(openrouter_api_key, gemini_api_key, "audit", p_name)
                             if qa:
                                 with st.spinner(f"กำลังตรวจสอบกับระเบียบสถาบัน ({p_name})..."):
                                     st.session_state.v_res = verify_receipt_rules(qa, ocr)

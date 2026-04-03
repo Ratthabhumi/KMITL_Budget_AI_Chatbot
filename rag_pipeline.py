@@ -79,6 +79,18 @@ def initialize_vector_db(api_key):
     st.success(f"ดำเนินการเสร็จสิ้น! โหลดเอกสารทั้งหมด {len(pdf_files)} ไฟล์ (รวม {len(splits)} chunks) เรียบร้อยแล้ว")
     return True
 
+@st.cache_resource(show_spinner=False)
+def _get_embeddings():
+    """โหลด Embedding Model ครั้งเดียว แล้ว cache ไว้ตลอด session"""
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+@st.cache_resource(show_spinner=False)
+def _get_vectorstore():
+    """โหลด ChromaDB ครั้งเดียว แล้ว cache ไว้ตลอด session"""
+    if not os.path.exists(DB_DIR):
+        return None
+    return Chroma(persist_directory=DB_DIR, embedding_function=_get_embeddings())
+
 def get_qa_chain(api_key, gemini_api_key=None, mode="chat", provider=None):
     """
     สร้าง RAG Chain สำหรับการตอบคำถาม
@@ -87,13 +99,13 @@ def get_qa_chain(api_key, gemini_api_key=None, mode="chat", provider=None):
     mode: "chat" หรือ "audit"
     provider: "openrouter" หรือ "gemini" (บังคับใช้ตัวใดตัวหนึ่ง)
     """
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    embeddings = _get_embeddings()
 
-    # โหลดจากฐานข้อมูลเดิม
-    if not os.path.exists(DB_DIR):
+    # โหลดจากฐานข้อมูลเดิม (cached)
+    vectorstore = _get_vectorstore()
+    if vectorstore is None:
         return None
-        
-    vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
+
     retriever_obj = vectorstore.as_retriever(search_kwargs={"k": 10})
     
     # --- เพิ่มการทำความสะอาดข้อความทันที (Immediate Cleaning) ---
