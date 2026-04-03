@@ -1,23 +1,21 @@
 import os
 import glob
 import streamlit as st
-from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain_classic.chains import create_retrieval_chain
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-DB_DIR = "./chroma_db"
+# ตั้งค่าฐานข้อมูล Vector
+DB_DIR = "./chroma_db_v2"
 DOCS_DIR = "./Docs"
 
 def initialize_vector_db(api_key):
     """อ่านไฟล์ PDF ทั้งหมดในโฟลเดอร์ Docs และสร้างฐานข้อมูลเวกเตอร์ ChromaDB"""
-    
-    # ตั้งค่า API Key ให้กับ environment (Langchain จะนำไปใช้โดยอัตโนมัติ)
-    os.environ["GOOGLE_API_KEY"] = api_key
     
     pdf_files = glob.glob(os.path.join(DOCS_DIR, "*.pdf"))
     if not pdf_files:
@@ -41,63 +39,101 @@ def initialize_vector_db(api_key):
             
     # 2. ตัดแบ่งข้อความ (Chunking) เพื่อให้โมเดลประมวลผลได้ดีขึ้น
     progress_bar.progress(0.9, text="กำลังตัดแบ่งข้อความ (Splitting)... อาจใช้เวลาสักครู่")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=150)
     splits = text_splitter.split_documents(documents)
     
-    # 3. สร้าง Embeddings ด้วย Local Model (ไม่ต้องใช้ API ของ Google อีกต่อไป)
+    # 3. สร้าง Embeddings ด้วย Local Model
     progress_bar.progress(0.95, text="กำลังโหลดโมเดลภาษาไทย (Local Embedding) และบันทึกลง ChromaDB...")
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     
-    # วิธีนี้จะสร้าง folder ชื่อ chroma_db เพื่อเก็บข้อมูลไว้เปิดครั้งต่อไปได้เลย
-    vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-    batch_size = 20
-    for i in range(0, len(splits), batch_size):
-        batch = splits[i:i+batch_size]
-        vectorstore.add_documents(documents=batch)
+    # สร้าง/โหลด Vector Store
+    if os.path.exists(DB_DIR):
+        import shutil
+        shutil.rmtree(DB_DIR) # Clean start for rebuild
+        
+    vectorstore = Chroma.from_documents(
+        documents=splits, 
+        embedding=embeddings, 
+        persist_directory=DB_DIR
+    )
     
     progress_bar.empty()
-    st.success(f"ดำเนินการเสร็จสิ้น! โหลดเอกสารทั้งหมด {len(pdf_files)} ไฟล์ เรียบร้อยแล้ว")
+    st.success(f"ดำเนินการเสร็จสิ้น! โหลดเอกสารทั้งหมด {len(pdf_files)} ไฟล์ (รวม {len(splits)} chunks) เรียบร้อยแล้ว")
     return True
 
-def get_qa_chain(api_key):
-    """สร้าง Chain สำหรับตอบคำถามอ้างอิงจาก Vector DB ที่มีอยู่"""
-    
+def get_qa_chain(api_key, mode="chat"):
+    """
+    สร้าง RAG Chain สำหรับการตอบคำถาม
+    mode: "chat" สำหรับคำถามทั่วไป, "audit" สำหรับการตรวจสอบใบเสร็จ
+    """
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+    # โหลดจากฐานข้อมูลเดิม
     if not os.path.exists(DB_DIR):
         return None
         
-    os.environ["GOOGLE_API_KEY"] = api_key
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-
-    # โหลดจากฐานข้อมูลเดิมที่เคยบันทึกไว้
     vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-
     retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
     
-    # สามารถใช้ gemma-3-4b-it ได้ หรือถ้าอยากให้ฉลาดขึ้นมากแบบฟรี 15 ครั้ง/นาที 
-    # แนะนำให้เปลี่ยนตัวเลขเป็น "gemini-1.5-flash"
-    llm = ChatGoogleGenerativeAI(model="gemma-3-4b-it", temperature=0)
+    # ระบบ Fallback สำหรับโมเดลฟรีใน OpenRouter
+    models_to_try = [
+        "google/gemma-3-27b-it:free",
+        "google/gemma-3-4b-it:free",
+        "google/gemma-2-9b-it:free",
+        "mistralai/mistral-7b-instruct:free"
+    ]
     
-    # จัดหน้ากระดาษ Prompt ใหม่ให้โมเดลตัวเล็กๆ เข้าใจง่ายขึ้นโดยใช้ XML tags
-    combined_prompt = (
-        "คุณคือ AI ผู้ช่วยอัจฉริยะของสถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง (สจล.)\n"
-        "หน้าที่ของคุณคือตอบคำถามเกี่ยวกับ 'ระเบียบงบประมาณและการจัดซื้อจัดจ้าง' ด้วยความถูกต้องและแม่นยำ\n\n"
-        "คำสั่ง:\n"
-        "1. ตอบคำถามโดยอ้างอิงจากข้อมูลใน <context> เท่านั้น ห้ามคิดเอง\n"
-        "2. หากข้อมูลใน <context> ไม่เกี่ยวหรือไม่มีคำตอบ ให้ตอบว่า 'ขออภัย ไม่พบข้อมูลในระเบียบการครับ/ค่ะ'\n"
-        "3. อธิบายให้เข้าใจง่าย เป็นข้อๆ และเป็นทางการ\n\n"
-        "<context>\n"
-        "{context}\n"
-        "</context>\n\n"
-        "คำถาม: {input}\n"
-        "คำตอบ:"
-    )
-    
+    llm = None
+    for model_name in models_to_try:
+        try:
+            llm = ChatOpenAI(
+                model=model_name,
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key,
+                temperature=0,
+                max_retries=1
+            )
+            break
+        except:
+            continue
+
+    if not llm:
+        llm = ChatOpenAI(model=models_to_try[0], base_url="https://openrouter.ai/api/v1", api_key=api_key)
+
+    # --- เลือก Prompt ตามโหมดการใช้งาน (Brain Refresh) ---
+    if mode == "audit":
+        system_message = (
+            "### [ROLE: STRICT AUDITOR]\n"
+            "คุณคือ AI ผู้เชี่ยวชาญด้านการตรวจสอบหลักฐานการจ่ายเงิน ของ สจล. หน้าที่เดียวของคุณคือตัดสิน 'ผ่าน' หรือ 'ไม่ผ่าน' เท่านั้น\n"
+            "โดยยึดตาม PRIORITY RULES เป็นอันดับ 1 (สำคัญที่สุด):\n\n"
+            "### 🚨 [MANDATORY PRIORITY RULES]\n"
+            "1. บิลจากบริษัทใหญ่ (Makro, HomePro, 7-11, CP Axtra, Central, BigC, etc.) ที่ออกโดยระบบคอมพิวเตอร์ = [STATUS: PASS] เสมอ\n"
+            "2. **ห้าม** แจ้งว่าไม่ผ่านเพียงเพราะไม่มีตราประทับ 'จ่ายเงินแล้ว' สีแดงสำหรับบิลตามข้อ 1\n"
+            "3. ชื่อผู้ซื้อต้องเป็น 'สถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง'\n\n"
+            "### [INSTRUCTIONS]\n"
+            "- วิเคราะห์ข้อมูลที่ได้รับ (Input) เทียบกับระเบียบ (Context)\n"
+            "- ให้เหตุผลประกอบสั้นๆ และชัดเจน\n"
+            "- ปิดท้ายคำตอบด้วย [STATUS: PASS] หรือ [STATUS: FAIL] เท่านั้น\n"
+            "- **ห้าม** ตอบคำถามทั่วไปในโหมดนี้"
+        )
+        human_message = "Context: {context}\n\nInput (OCR Data): {input}"
+    else:
+        system_message = (
+            "### [ROLE: HELPFUL CONSULTANT]\n"
+            "คุณคือ AI ที่ปรึกษาด้านระเบียบการพัสดุและการเงิน ของ สจล. คุณจะตอบคำถามทั่วไปอย่างสุภาพและให้ข้อมูลที่ถูกต้อง\n\n"
+            "### [RULES]\n"
+            "1. ตอบคำถามตามระเบียบจาก <context> อ้างอิงเลขหน้าหรือข้อให้ชัดเจน\n"
+            "2. **ห้าม** พูดเรื่อง [STATUS: PASS/FAIL] หรือกฎลำดับความสำคัญ (Priority Rules) ของการตรวจบิลในโหมดนี้เด็ดขาด\n"
+            "3. หากไม่พบข้อมูล ให้บอกว่าไม่พบในระเบียบ สจล. และแนะนำให้ติดต่อกองคลัง\n"
+            "4. รักษามารยาทและภาพลักษณ์ที่ดีของสถาบัน\n\n"
+            "--- ลืมกฎการตรวจบิล (Audit Rules) ทั้งหมด และเน้นให้คำแนะนำที่ครอบคลุม ---"
+        )
+        human_message = "Context: {context}\n\nคำถามจากผู้ใช้: {input}"
+
     prompt = ChatPromptTemplate.from_messages([
-        ("human", combined_prompt),
+        ("system", system_message),
+        ("human", human_message)
     ])
     
-    # สร้าง Chain (ประกอบร่างโมเดลกับ Prompt เข้าด้วยกัน)
     question_answer_chain = create_stuff_documents_chain(llm, prompt)
-    rag_chain = create_retrieval_chain(retriever, question_answer_chain)
-    
-    return rag_chain
+    return create_retrieval_chain(retriever, question_answer_chain)

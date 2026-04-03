@@ -1,312 +1,312 @@
 import streamlit as st
 import os
 import json
+import time
 from datetime import datetime
 import pandas as pd
 from rag_pipeline import initialize_vector_db, get_qa_chain
+from ocr_pipeline import extract_receipt_data, verify_receipt_rules
 
-# การตั้งค่าหน้ากระดาษ (Page Configuration)
+# --- Page Configuration ---
 st.set_page_config(
     page_title="KMITL Budget AI",
     page_icon="🎓",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="auto"
 )
 
-# === ฟังก์ชันบันทึก Feedback ===
-def save_feedback(question, answer, is_upvote):
-    feedback_file = "feedback_log.json"
-    data = []
-    if os.path.exists(feedback_file):
-        try:
-            with open(feedback_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = []
-            
-    data.append({
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "question": question,
-        "answer": answer,
-        "feedback": "👍 ดี/ถูกต้อง" if is_upvote else "👎 ไม่ถูกต้อง/มั่ว"
-    })
+# --- Custom Styling (Premium & Mobile-First) ---
+st.markdown("""
+<style>
+    /* Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;600&display=swap');
     
-    with open(feedback_file, "w", encoding="utf-8") as f:
+    html, body, [class*="css"] {
+        font-family: 'Inter', 'IBM+Plex+Sans+Thai', sans-serif;
+    }
+
+    /* Theme-Aware Backgrounds & Containers */
+    .stApp {
+        background-color: transparent !important;
+    }
+    
+    /* Mobile-Specific Tweaks */
+    @media (max-width: 640px) {
+        .main .block-container { padding: 1rem !important; }
+        h1 { font-size: 1.8rem !important; }
+        .stButton>button { height: 3.5rem !important; font-size: 1.1rem !important; }
+        .stTabs [data-baseweb="tab-list"] { gap: 8px !important; }
+    }
+
+    /* Professional Elements & Cards */
+    .stButton>button {
+        border-radius: 12px;
+        transition: all 0.2s ease-in-out;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        font-weight: 600;
+    }
+    .stButton>button:active { transform: scale(0.98); }
+    
+    /* Input Boxes Visibility for API Keys */
+    .stTextInput input {
+        border: 1px solid rgba(128, 128, 128, 0.5) !important;
+        background-color: rgba(128, 128, 128, 0.1) !important;
+    }
+
+    /* Custom Reference Card (Glassmorphism inspired) */
+    .reference-card {
+        padding: 12px;
+        background: rgba(128, 128, 128, 0.05);
+        border-left: 4px solid #ff4b4b;
+        border-radius: 6px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+        color: inherit;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Utility Functions ---
+def load_json_safe(file_path):
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if not content: return []
+                return json.loads(content)
+        except: return []
+    return []
+
+def save_json_safe(file_path, data):
+    with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+def save_feedback(question, answer, is_upvote):
+    data = load_json_safe("feedback_log.json")
+    data.append({
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "question": question, "answer": answer,
+        "score": 1 if is_upvote else 0,
+        "feedback": "👍 ดี/ถูกต้อง" if is_upvote else "👎 ไม่ถูกต้อง/มั่ว"
+    })
+    save_json_safe("feedback_log.json", data)
 
-# ส่วนของ Sidebar สำหรับการตั้งค่า
+# ==========================================
+# ⚙️ Sidebar Navigation & Settings
+# ==========================================
 with st.sidebar:
-    st.title("⚙️ การตั้งค่า")
+    st.title("🎓 Budget AI")
     
-    # 📌 ส่วนเลือกหน้าจอการทำงาน (Navigation)
-    st.markdown("### 📌 เมนูระบบ")
-    page = st.radio("เลือกหน้าต่างการทำงาน:", ["💬 แชทบอท (Chatbot)", "📸 ตรวจสอบใบเสร็จ (Receipt Verification)", "📊 แดชบอร์ดผู้ดูแล (Admin)"])
-    st.divider()
+    st.markdown("### 📌 เมนูหลัก")
+    page = st.radio("Navigation", ["💬 วิเคราะห์ระเบียบ", "📸 ตรวจสอบใบเสร็จ", "📊 Admin Dashboard"], label_visibility="collapsed")
     
-    api_key_input = st.text_input("ระบุ Gemini API Key (หากไม่มีใน secrets.toml):", type="password")
-    
-    try:
-        # พยายามดึง Key จาก secrets.toml ก่อน
-        if "GEMINI_API_KEY" in st.secrets:
-            api_key = st.secrets["GEMINI_API_KEY"].strip()
-        else:
-            api_key = api_key_input 
-
-        if not api_key:
-            st.warning("⚠️ ไม่พบ API Key กรุณาตรวจสอบไฟล์ secrets.toml หรือระบุที่ Sidebar")
-            st.stop()
-            
-    except Exception as e:
-        st.error(f"Error connecting to Gemini: {e}")
-        st.stop()
-        
-    gemini_api_key = api_key
-    
-    st.divider()
-    st.markdown("""
-    ### เกี่ยวกับโปรเจกต์
-    ระบบนี้ใช้ AI ช่วยตอบคำถามเกี่ยวกับ
-    **ระเบียบการเบิกจ่ายงบประมาณ KMITL**
-    """)
-    if gemini_api_key:
-        st.divider()
-        st.write("⚙️ จัดการฐานข้อมูล (DB)")
-        if st.button("🔄 โหลดเอกสารจากโฟลเดอร์ Docs เป็นฐานข้อมูล", help="สกัดและทำ Vector DB"):
-            initialize_vector_db(gemini_api_key)
-
-# ==========================================
-# 💬 หน้า 1: Chatbot View
-# ==========================================
-if page == "💬 แชทบอท (Chatbot)":
-    st.title("🎓 KMITL Budget AI Chatbot")
-    st.subheader("ระบบสนับสนุนการตอบคำถามด้านการเบิกจ่ายงบประมาณ")
-
-    if not gemini_api_key:
-        st.warning("กรุณาใส่ API Key ที่ Sidebar ด้านซ้ายเพื่อเริ่มต้นใช้งาน")
-    else:
-        st.success("API Key พร้อมใช้งานแล้ว")
-
-    if "messages" not in st.session_state:
+    if st.button("🗑️ ล้างประวัติแชท (Clear Chat)", use_container_width=True):
         st.session_state.messages = []
+        st.rerun()
 
-    for i, message in enumerate(st.session_state.messages):
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            
-            if message["role"] == "assistant":
-                if "source_documents" in message and message["source_documents"]:
-                    with st.expander("📄 ดูเอกสารอ้างอิงต้นฉบับ"):
-                        for idx, doc in enumerate(message["source_documents"]):
-                            source_name = os.path.basename(doc.metadata.get('source', 'ไม่ระบุชื่อไฟล์'))
-                            page_num = doc.metadata.get('page', 0)
-                            if isinstance(page_num, int):
-                                page_num += 1
-                            st.markdown(f"**อ้างอิงที่ {idx+1}:** ไฟล์ `{source_name}` (หน้าที่ {page_num})")
-                            st.info(doc.page_content)
-                            
-                prev_question = st.session_state.messages[i-1]["content"] if i > 0 else "ไม่ทราบคำถาม"
+    st.markdown("---")
+    with st.expander("🔑 API Settings", expanded=True):
+        api_key_input = st.text_input("OpenRouter Key:", type="password", help="ใช้สำหรับ RAG (Gemma 3)")
+        gemini_key_input = st.text_input("Google Gemini Key:", type="password", help="ใช้สำหรับ OCR (Gemini 1.5 Flash)")
+        st.caption("💡 แนะนำให้บันทึกใน secrets.toml เพื่อความสะดวก")
+
+    openrouter_api_key = st.secrets.get("OPENROUTER_API_KEY", api_key_input).strip()
+    gemini_api_key = st.secrets.get("GEMINI_API_KEY", gemini_key_input).strip()
+
+    if not openrouter_api_key or not gemini_api_key:
+        st.error("⚠️ กรุณระบุ API Keys เพื่อเริ่มใช้งาน")
+        st.stop()
+    
+    with st.expander("🛠️ จัดการระบบ (Admin)"):
+        if st.button("🔄 รีเซ็ตฐานข้อมูล Vector", use_container_width=True):
+            with st.spinner("กำลังดำเนินการ..."):
+                initialize_vector_db(openrouter_api_key)
+                st.success("Rebuild สำเร็จ!")
+
+# ==========================================
+# 💬 หน้าแชทบอท (วิเคราะห์ระเบียบ)
+# ==========================================
+if "💬" in page:
+    st.title("💬 วิเคราะห์ระเบียบการ")
+    st.markdown("_ถามเกี่ยวกับขั้นตอนการเบิกจ่าย พัสดุ หรือกฎเกณฑ์ สจล._")
+
+    if "messages" not in st.session_state: st.session_state.messages = []
+
+    # Display chat messages
+    for i, m in enumerate(st.session_state.messages):
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+            if m["role"] == "assistant":
+                if "sources" in m and m["sources"]:
+                    with st.expander("📄 แหล่งอ้างอิงเอกสารที่ใช้"):
+                        for d in m["sources"]:
+                            st.markdown(f'<div class="reference-card">{d.page_content}</div>', unsafe_allow_html=True)
                 
-                c1, c2, c3 = st.columns([1, 1, 8])
-                with c1:
-                    if st.button("👍 ดี", key=f"upvote_{i}"):
-                        save_feedback(prev_question, message["content"], True)
-                        st.toast("ขอบคุณสำหรับข้อเสนอแนะ! บันทึกแล้วค่ะ 👍")
-                with c2:
-                    if st.button("👎 แย่", key=f"downvote_{i}"):
-                        save_feedback(prev_question, message["content"], False)
-                        st.toast("ขอบคุณสำหรับข้อเสนอแนะ! เราจะนำไปปรับปรุงค่ะ 👎")
+                # --- ปุ่ม Feedback (👍/👎) ---
+                c1, c2, c3 = st.columns([1, 1, 10])
+                if c1.button("👍", key=f"up_{i}"):
+                    save_feedback(st.session_state.messages[i-1]["content"], m["content"], True)
+                    st.toast("บันทึกการตอบรับเชิงบวกเรียบร้อย! ✨")
+                if c2.button("👎", key=f"down_{i}"):
+                    save_feedback(st.session_state.messages[i-1]["content"], m["content"], False)
+                    st.toast("บันทึกคำติชมเชิงลบแล้ว เราจะปรับปรุงให้เก่งขึ้นครับ! 🛠️")
 
-    if prompt := st.chat_input("สอบถามเรื่องการเบิกจ่ายได้ที่นี่..."):
+    # Chat Input
+    if prompt := st.chat_input("ตัวอย่าง: เบิกค่าที่พักได้คืนละเท่าไหร่..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with st.chat_message("user"): st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            if not gemini_api_key:
-                response = "⚠️ กรุณากรอก API Key ที่ Sidebar ด้านซ้ายก่อนถามคำถามค่ะ"
-                st.warning(response)
-            else:
-                with st.spinner("AI กำลังค้นคว้าระเบียบการและค้นหาคำตอบ..."):
-                    qa_chain = get_qa_chain(gemini_api_key)
-                    if qa_chain is None:
-                        response = "⚠️ ยังขาดฐานข้อมูลระเบียบการ! รบกวนกดปุ่ม 'โหลดเอกสาร' ด้านซ้ายมือก่อน"
-                        st.error(response)
-                    else:
-                        try:
-                            result = qa_chain.invoke({"input": prompt})
-                            response = result["answer"]
-                            st.markdown(response)
-                            source_docs = result.get("context", [])
-                            if source_docs:
-                                with st.expander("📄 ดูเอกสารอ้างอิงต้นฉบับ (Source Documents)"):
-                                    for idx, doc in enumerate(source_docs):
-                                        source_name = os.path.basename(doc.metadata.get('source', 'ไม่ระบุชื่อไฟล์'))
-                                        page_num = doc.metadata.get('page', 0)
-                                        if isinstance(page_num, int):
-                                            page_num += 1
-                                        st.markdown(f"**อ้างอิงที่ {idx+1}:** ไฟล์ `{source_name}` (หน้าที่ {page_num})")
-                                        st.info(doc.page_content)
-                        except Exception as e:
-                            response = f"**เกิดข้อผิดพลาดระหว่างใช้ AI:** {e}"
-                            st.error(response)
-                            source_docs = []
-
-        st.session_state.messages.append({"role": "assistant", "content": response, "source_documents": source_docs if 'source_docs' in locals() else []})
+            with st.spinner("AI กำลังค้นหาระเบียบที่เกี่ยวข้อง..."):
+                qa = get_qa_chain(openrouter_api_key, mode="chat")
+                res = qa.invoke({"input": prompt})
+                ans, ctx = res["answer"], res.get("context", [])
+                st.markdown(ans)
+                st.session_state.messages.append({"role": "assistant", "content": ans, "sources": ctx})
 
 # ==========================================
-# 📸 หน้า 1.5: Receipt Verification
+# 📸 หน้าตรวจสอบใบเสร็จ (Receipt Verification)
 # ==========================================
-elif page == "📸 ตรวจสอบใบเสร็จ (Receipt Verification)":
-    st.title("📸 ตรวจสอบใบเสร็จด้วย AI (Receipt Verification)")
-    st.markdown("ระบบจะใช้ AI (OCR) อ่านข้อมูลจากรูปภาพใบเสร็จเพื่อตรวจสอบความถูกต้องและเช็กเงื่อนไขกับระเบียบเบิกจ่ายของ KMITL แบบอัตโนมัติ")
+elif "📸" in page:
+    st.title("📸 ตรวจสอบใบเสร็จ")
     
-    if not gemini_api_key:
-        st.warning("⚠️ กรุณากรอก API Key ที่ Sidebar ด้านซ้ายก่อนค่ะ")
-    else:
-        c1, c2 = st.columns(2)
-        with c1:
-            uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์รูปภาพใบเสร็จ", type=["png", "jpg", "jpeg"])
-        with c2:
-            camera_file = st.camera_input("📷 หรือเปิดกล้องถ่ายใบเสร็จ")
-            
-        target_image = camera_file if camera_file else uploaded_file
+    # Responsive Columns
+    col_up, col_res = st.columns([1, 1.2], gap="large")
+    
+    with col_up:
+        st.markdown("### 📥 อัปโหลดเอกสาร")
+        tab_f, tab_c = st.tabs(["📂 ไฟล์ภาพ", "📷 ถ่ายรูป"])
+        up = tab_f.file_uploader("Upload Image", type=["png","jpg","jpeg"], label_visibility="collapsed")
+        cam = tab_c.camera_input("Camera Input", label_visibility="collapsed")
         
-        if target_image:
-            st.image(target_image, caption="รายการเอกสารที่แนบ", width=400)
-            
-            if st.button("🔍 ตรวจสอบและประมวลผล", type="primary"):
-                from ocr_pipeline import extract_receipt_data, verify_receipt_rules
-                
-                with st.spinner("⏳ กำลังใช้ Gemini 1.5 Flash (OCR Engine) สกัดตัวอักษรและโครงสร้างใบเสร็จ..."):
-                    img_bytes = target_image.getvalue()
-                    ocr_data = extract_receipt_data(img_bytes, gemini_api_key)
-                    
-                if "error" in ocr_data and "raw_content" not in ocr_data:
-                    st.error(f"❌ ระบบประมวลผลภาพผิดพลาด: {ocr_data['error']}")
+        target = cam if cam else up
+        if target:
+            st.image(target, use_container_width=True, caption="รูปภาพที่เลือก")
+            if st.button("🚀 เริ่มการวิเคราะห์", type="primary", use_container_width=True):
+                with st.spinner("AI OCR กำลังสกัดข้อมูล..."):
+                    ocr = extract_receipt_data(target.getvalue(), gemini_api_key)
+                if "error" in ocr: 
+                    st.error(f"ระบบ OCR ผิดพลาด: {ocr['error']}")
                 else:
-                    st.success("✅ สกัดแยกหมวดหมู่ข้อมูลเอกสารสำเร็จ")
-                    st.markdown("### 📝 ข้อมูลที่สกัดได้จากใบเสร็จ (Extracted Data)")
-                    st.json(ocr_data)
-                    
-                    st.markdown("### ⚖️ ผลการวิเคราะห์และตรวจสอบความสมบูรณ์")
-                    with st.spinner("⏳ กำลังเปรียบเทียบข้อมูลกับฐานข้อมูลระเบียบการเบิกจ่าย (RAG Verification)..."):
-                        qa_chain = get_qa_chain(gemini_api_key)
-                        if qa_chain is None:
-                            st.error("⚠️ ยังขาดฐานข้อมูลระเบียบการ! รบกวนกดปุ่ม 'โหลดเอกสาร' ด้านซ้ายมือก่อน")
-                        else:
-                            ai_analysis = verify_receipt_rules(qa_chain, ocr_data)
-                            st.info(ai_analysis)
-                            
-                            st.markdown("---")
-                            st.markdown("### 📬 จำลองระบบอนุมัติอัตโนมัติ (Automated Workflow)")
-                            st.button("✅ ยืนยันความสมบูรณ์ และจัดส่งเข้าสู่ระบบ DMS ของสถาบัน", type="primary")
+                    st.session_state.ocr = ocr
+                    qa = get_qa_chain(openrouter_api_key, mode="audit")
+                    with st.spinner("กำลังตรวจสอบกับระเบียบสถาบัน..."):
+                        st.session_state.v_res = verify_receipt_rules(qa, ocr)
 
-# ==========================================
-# 📊 หน้า 2: Admin Dashboard
-# ==========================================
-elif page == "📊 แดชบอร์ดผู้ดูแล (Admin)":
-    st.title("📊 แดชบอร์ดประเมินการทำงาน (Admin Dashboard)")
-    st.markdown("ตรวจสอบสถิติความแม่นยำของโมเดล (Evaluation) และความคิดเห็นของผู้ใช้งานจริง (User Feedback)")
-
-    # โหลดข้อมูลต่างๆ
-    retrieval_data, eval_data, feedback_data = {}, [], []
-    retrieval_file = "retrieval_eval_report.json"
-    eval_file = "evaluation_report.json"
-    feedback_file = "feedback_log.json"
-
-    if os.path.exists(retrieval_file):
-        with open(retrieval_file, "r", encoding="utf-8") as f:
-            retrieval_data = json.load(f)
-    if os.path.exists(eval_file):
-        with open(eval_file, "r", encoding="utf-8") as f:
-            eval_data = json.load(f)
-    if os.path.exists(feedback_file):
-        with open(feedback_file, "r", encoding="utf-8") as f:
-            feedback_data = json.load(f)
-
-    st.markdown("### 🏆 1. ภาพรวมความแม่นยำของระบบค้นหา (Retrieval Metrics)")
-    if retrieval_data and "overall_metrics" in retrieval_data:
-        metrics = retrieval_data["overall_metrics"]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📌 ข้อสอบทั้งหมด", f"{retrieval_data.get('total_questions', 0)} ข้อ")
-        c2.metric("🎯 Avg Recall@K", f"{metrics.get('Avg_Recall@6', 0):.4f}")
-        c3.metric("📏 Avg Precision@K", f"{metrics.get('Avg_Precision@6', 0):.4f}")
-        c4.metric("🥇 Avg MRR", f"{metrics.get('Avg_MRR', 0):.4f}")
-    else:
-        st.info("ยังไม่มีข้อมูล Retrieval Evaluation กรุณารัน `retrieval_eval.py`")
-
-    st.divider()
-
-    st.markdown("### ⚖️ 2. ผลการประเมินกรรมการ AI (LLM-as-a-Judge Scores)")
-    has_scores = False
-    f_scores, r_scores, c_scores = [], [], []
-
-    for item in eval_data:
-        scores = item.get("evaluation_scores")
-        if scores and not isinstance(scores, str) and "error" not in scores: # ตรวจสอบเผื่อมี Error
-            f_scores.append(scores.get("Faithfulness") or 0)
-            r_scores.append(scores.get("Answer_Relevance") or 0)
-            c_scores.append(scores.get("Context_Precision") or 0)
-
-    if f_scores:
-        has_scores = True
-        avg_f = sum(f_scores) / len(f_scores)
-        avg_r = sum(r_scores) / len(r_scores)
-        avg_c = sum(c_scores) / len(c_scores)
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("💡 Avg Faithfulness", f"{avg_f:.2f}/5", "ไม่เกิดการมั่ว (Hallucination)")
-        c2.metric("🎯 Avg Relevance", f"{avg_r:.2f}/5", "ตอบตรงประเด็น")
-        c3.metric("📄 Context Precision", f"{avg_c:.2f}/5", "ข้อสอบตรงกับเอกสาร")
-
-        # กราฟแท่งเปรียบเทียบคะแนน
-        chart_data = pd.DataFrame(
-            {"คะแนนเฉลี่ย": [avg_f, avg_r, avg_c]},
-            index=["Faithfulness", "Answer Relevance", "Context Precision"]
-        )
-        st.bar_chart(chart_data)
-        
-        with st.expander("📝 ดูข้อสอบที่มีปัญหา (คะแนนต่ำกว่า 3)"):
-            low_score_items = []
-            for item in eval_data:
-                sc = item.get("evaluation_scores", {})
-                if sc and not isinstance(sc, str) and "error" not in sc:
-                    if sc.get("Faithfulness", 5) < 3 or sc.get("Answer_Relevance", 5) < 3:
-                        low_score_items.append({
-                            "Question": item["question"],
-                            "Faithfulness": sc.get("Faithfulness"),
-                            "Relevance": sc.get("Answer_Relevance"),
-                            "Reasoning": sc.get("Reasoning", "")
-                        })
-            if low_score_items:
-                st.dataframe(pd.DataFrame(low_score_items), use_container_width=True)
-            else:
-                st.success("🎉 ไม่มีข้อสอบข้อใดที่ได้คะแนนความแม่นยำต่ำกว่า 3 เลย!")
-    else:
-        st.info("ยังไม่มีข้อมูลของ LLM-as-a-Judge ในชุดข้อมูล! (คุณสามารถรัน `python ai_evaluator.py` เพื่อให้กรรมการตรวจและให้คะแนน)")
-
-    st.divider()
-
-    st.markdown("### 💌 3. ความคิดเห็นของผู้ใช้งาน (User Feedback)")
-    if feedback_data:
-        df_feed = pd.DataFrame(feedback_data)
-        feed_counts = df_feed["feedback"].value_counts()
-        
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.metric("ผู้ใช้ประเมินทั้งหมด", f"{len(df_feed)} ครั้ง")
-            up_count = int(feed_counts.get("👍 ดี/ถูกต้อง", 0))
-            down_count = int(feed_counts.get("👎 ไม่ถูกต้อง/มั่ว", 0))
-            st.metric("👍 จำนวนโหวตดี", up_count)
-            st.metric("👎 จำนวนโหวตแย่", down_count)
-        with c2:
-            st.bar_chart(feed_counts, color="#FF4B4B")
+    with col_res:
+        st.markdown("### 🚦 ผลการตรวจสอบ")
+        if "v_res" in st.session_state:
+            v, o = st.session_state.v_res, st.session_state.ocr
             
-        with st.expander("🔍 ดูข้อความแชทที่มีคนโหวตแย่ (เพื่อนำไปปรับปรุง)"):
-            bad_feedbacks = df_feed[df_feed["feedback"] == "👎 ไม่ถูกต้อง/มั่ว"]
-            if not bad_feedbacks.empty:
-                st.dataframe(bad_feedbacks[["timestamp", "question", "answer"]], use_container_width=True)
-            else:
-                st.success("🎉 ยังไม่มีการโหวตคะแนนแย่ในระบบ!")
+            # Status Badge
+            if v["status"] == "PASS": 
+                st.success("✅ **อนุมัติ:** เอกสารมีความสมบูรณ์ตามระเบียบ")
+            elif v["status"] == "FAIL": 
+                st.error("❌ **แจ้งแก้ไข:** พบข้อบกพร่องตามระเบียบ")
+            else: 
+                st.warning("⚠️ **ตรวจสอบเพิ่ม:** พบความไม่แน่นอนบางประการ")
+            
+            st.markdown(f"**💡 บทวิเคราะห์ระเบียบ:**")
+            st.write(v['analysis'])
+            
+            with st.expander("🛠️ ตูข้อมูลดิบที่สกัดได้ (Raw Data)"):
+                st.json(o)
+            
+            st.divider()
+            if st.button("📫 ส่งข้อมูลเข้าเวิร์กโฟลว์ DMS (Simulation)", use_container_width=True):
+                bar = st.progress(0, "Connecting to Cloud DMS...")
+                for p in range(100):
+                    time.sleep(0.01)
+                    bar.progress(p+1)
+                
+                # Persist to local log
+                logs = load_json_safe("approved_logs.json")
+                logs.append({
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                    "vendor": o.get("vendor_name"),
+                    "total": o.get("total_amount"),
+                    "status": v["status"]
+                })
+                save_json_safe("approved_logs.json", logs)
+                st.balloons()
+                st.success("บันทึกเข้าระบบ Cloud สำเร็จ!")
+        else:
+            st.info("กรุณาอัปโหลดหรือถ่ายภาพใบเสร็จเพื่อเริ่มการวิเคราะห์")
+
+# ==========================================
+# 📊 หน้าแดชบอร์ดผู้ดูแล (Admin Dashboard)
+# ==========================================
+else:
+    st.title("📊 Admin Dashboard")
+    
+    feedbacks = load_json_safe("feedback_log.json")
+    approvals = load_json_safe("approved_logs.json")
+    eval_report = load_json_safe("evaluation_report.json")
+    
+    # --- Metrics Grid ---
+    st.markdown("### 🎯 ภาพรวมระบบ")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("จำนวนแชท/ฟีดแบ็ค", len(feedbacks))
+    m2.metric("บิลที่ส่งตรวจสอบสำเร็จ", len(approvals))
+    
+    good_rates = [f["score"] for f in feedbacks if "score" in f]
+    avg_sat = sum(good_rates)/len(good_rates) if good_rates else 0
+    m3.metric("คะแนนความพึงพอใจ AI", f"{avg_sat*100:.1f}%")
+    
+    # --- RAG Performance Section (The "Old Way" Restored) ---
+    st.markdown("---")
+    st.markdown("### 🧬 ผลการตอบโจทย์ (Evaluation Metrics)")
+    
+    if eval_report:
+        # Extract RAGAS-like scores (Safely with .get())
+        faith_scores = [e["evaluation_scores"].get("Faithfulness") for e in eval_report if "evaluation_scores" in e and e["evaluation_scores"].get("Faithfulness") is not None]
+        rel_scores = [e["evaluation_scores"].get("Answer_Relevance") for e in eval_report if "evaluation_scores" in e and e["evaluation_scores"].get("Answer_Relevance") is not None]
+        prec_scores = [e["evaluation_scores"].get("Context_Precision") for e in eval_report if "evaluation_scores" in e and e["evaluation_scores"].get("Context_Precision") is not None]
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Faithfulness", f"{sum(faith_scores)/len(faith_scores):.2f}/5" if faith_scores else "N/A")
+        c2.metric("Answer Relevance", f"{sum(rel_scores)/len(rel_scores):.2f}/5" if rel_scores else "N/A")
+        c3.metric("Context Precision", f"{sum(prec_scores)/len(prec_scores):.2f}/5" if prec_scores else "N/A")
+        
+        st.divider()
+        # --- กราฟแสดงแนวโน้ม (The Missing Graphs Restored) ---
+        st.markdown("#### 📉 แนวโน้มประสิทธิภาพ AI (Evaluation Trend)")
+        chart_data = pd.DataFrame({
+            "Faithfulness": faith_scores,
+            "Relevance": rel_scores,
+            "Precision": prec_scores
+        })
+        st.area_chart(chart_data, height=300)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🔍 ดูข้อมูลประเมินรายข้อ (Show Data Mode)"):
+            eval_rows = []
+            for e in eval_report:
+                sc = e.get("evaluation_scores", {})
+                eval_rows.append({
+                    "คำถาม": e.get("question"),
+                    "Faithful": sc.get("Faithfulness"),
+                    "Relevance": sc.get("Answer_Relevance"),
+                    "Precision": sc.get("Context_Precision"),
+                    "Reasoning": sc.get("Reasoning")
+                })
+            st.dataframe(pd.DataFrame(eval_rows), use_container_width=True)
     else:
-        st.info("ยังไม่มีข้อมูล Feedback จากผู้ใช้งาน (ลองปั๊มโหวต 👍/👎 ในหน้าแชทดูสิ!)")
+        st.info("ยังไม่มีข้อมูลการประเมิน RAG ในขณะนี้")
+
+    # --- Logs Grid ---
+    st.markdown("---")
+    st.markdown("### 📜 ประวัติการบันทึก (Logs)")
+    l1, l2 = st.columns(2)
+    with l1:
+        st.markdown("#### 💌 ล่าสุดจากผู้ใช้ (Feedback)")
+        if feedbacks:
+            st.dataframe(pd.DataFrame(feedbacks).tail(10), use_container_width=True)
+        else: st.caption("ยังไม่มีข้อมูล")
+    
+    with l2:
+        st.markdown("#### 📦 ล่าสุดที่เข้า DMS (Approvals)")
+        if approvals:
+            st.dataframe(pd.DataFrame(approvals).tail(10), use_container_width=True)
+        else: st.caption("ยังไม่มีข้อมูล")
