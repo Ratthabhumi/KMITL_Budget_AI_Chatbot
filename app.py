@@ -168,6 +168,13 @@ with st.sidebar:
         st.success("✅ Google Gemini Key: พร้อมใช้งาน")
     else:
         st.warning("⚠️ Gemini Key: ไม่ได้ตั้งค่า")
+
+    # Auto-build ChromaDB ถ้ายังไม่มี (สำคัญสำหรับ Streamlit Cloud)
+    if not os.path.exists("./chroma_db_v2"):
+        st.info("🔄 กำลังสร้างฐานข้อมูลเอกสาร (ครั้งแรก อาจใช้เวลา 1-2 นาที)...")
+        initialize_vector_db(openrouter_api_key or gemini_api_key)
+        st.success("✅ ฐานข้อมูลพร้อมใช้งาน!")
+        st.rerun()
     
     with st.expander("🛠️ จัดการระบบ (Admin)"):
         if st.button("🔄 รีเซ็ตฐานข้อมูล Vector", use_container_width=True):
