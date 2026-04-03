@@ -5,9 +5,8 @@ import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain_classic.chains import create_retrieval_chain
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -98,7 +97,6 @@ def get_qa_chain(api_key, gemini_api_key=None, mode="chat", provider=None):
     retriever_obj = vectorstore.as_retriever(search_kwargs={"k": 10})
     
     # --- เพิ่มการทำความสะอาดข้อความทันที (Immediate Cleaning) ---
-    from langchain_core.runnables import RunnableLambda
     def wrap_clean_docs(docs):
         for doc in docs:
             doc.page_content = clean_thai_text(doc.page_content)
@@ -208,6 +206,14 @@ def get_qa_chain(api_key, gemini_api_key=None, mode="chat", provider=None):
         ("system", system_message),
         ("human", human_message)
     ])
-    
-    question_answer_chain = create_stuff_documents_chain(llm, prompt)
-    return create_retrieval_chain(retriever, question_answer_chain)
+
+    def run_rag(inputs: dict) -> dict:
+        question = inputs["input"]
+        docs = retriever.invoke(question)
+        context_str = "\n\n".join(doc.page_content for doc in docs)
+        messages = prompt.format_messages(context=context_str, input=question)
+        response = llm.invoke(messages)
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"answer": answer, "context": docs}
+
+    return RunnableLambda(run_rag)
