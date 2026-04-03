@@ -217,9 +217,9 @@ if "💬" in page:
 
         with st.chat_message("assistant"):
             with st.spinner("AI กำลังค้นหาระเบียบที่เกี่ยวข้อง..."):
-                providers_to_try = ["openrouter", "gemini"]
+                providers_to_try = ["gemini", "openrouter"]
                 success = False
-                
+
                 for p_name in providers_to_try:
                     try:
                         qa = get_cached_qa_chain(openrouter_api_key, gemini_api_key, "chat", p_name)
@@ -275,22 +275,25 @@ elif "📸" in page:
                     st.error(f"ระบบ OCR ผิดพลาด: {ocr['error']}")
                 else:
                     st.session_state.ocr = ocr
-                    providers_to_try = ["openrouter", "gemini"]
+                    providers_to_try = ["gemini", "openrouter"]
                     success = False
-                    
+
                     for p_name in providers_to_try:
                         try:
                             qa = get_cached_qa_chain(openrouter_api_key, gemini_api_key, "audit", p_name)
                             if qa:
                                 with st.spinner(f"กำลังตรวจสอบกับระเบียบสถาบัน ({p_name})..."):
-                                    st.session_state.v_res = verify_receipt_rules(qa, ocr)
+                                    v_res = verify_receipt_rules(qa, ocr)
+                                    if v_res.get("status") == "ERROR":
+                                        continue  # ลอง provider ถัดไป
+                                    st.session_state.v_res = v_res
                                     success = True
                                     break
                         except Exception as e:
                             if p_name == providers_to_try[-1]:
                                 st.error(f"ไม่สามารถเชื่อมต่อ AI สำหรับการตรวจสอบได้ทุกระบบ: {e}")
                             else:
-                                continue # Try next
+                                continue
                     
                     if not success:
                         st.info("กรุณาตรวจสอบการตั้งค่า API Key หรือเว้นระยะเวลาการเรียกใช้งาน")
