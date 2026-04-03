@@ -25,4 +25,8 @@ Golden_Dataset_Kuk/
 
 # ===== Databases & Generated Outputs =====
 chroma_db/
+chroma_db_v2/
 *.log
+*.json
+!requirements.txt
+!golden_dataset.json
