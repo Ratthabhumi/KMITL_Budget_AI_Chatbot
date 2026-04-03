@@ -154,9 +154,20 @@ with st.sidebar:
     openrouter_api_key = st.secrets.get("OPENROUTER_API_KEY", api_key_input).strip()
     gemini_api_key = st.secrets.get("GEMINI_API_KEY", gemini_key_input).strip()
 
-    if not openrouter_api_key or not gemini_api_key:
-        st.error("⚠️ กรุณระบุ API Keys เพื่อเริ่มใช้งาน")
+    if not openrouter_api_key and not gemini_api_key:
+        st.error("⚠️ กรุณาระบุ API Key อย่างน้อย 1 ระบบเพื่อเริ่มใช้งาน")
         st.stop()
+
+    # แสดงสถานะ API Keys
+    st.markdown("**สถานะ API:**")
+    if openrouter_api_key:
+        st.success("✅ OpenRouter Key: พร้อมใช้งาน")
+    else:
+        st.warning("⚠️ OpenRouter Key: ไม่ได้ตั้งค่า")
+    if gemini_api_key:
+        st.success("✅ Google Gemini Key: พร้อมใช้งาน")
+    else:
+        st.warning("⚠️ Gemini Key: ไม่ได้ตั้งค่า")
     
     with st.expander("🛠️ จัดการระบบ (Admin)"):
         if st.button("🔄 รีเซ็ตฐานข้อมูล Vector", use_container_width=True):
@@ -224,8 +235,8 @@ if "💬" in page:
                         else:
                             continue # Try next provider
                 
-                if not success and not st.session_state.get("error_shown"):
-                    st.warning("ไม่สามารถเชื่อมต่อกับ AI ได้ในขณะนี้ กรุณาตรวจสอบ API Key ทั้งสองระบบ")
+                if not success:
+                    st.error("❌ ไม่สามารถเชื่อมต่อ AI ได้ — อาจเกิดจาก API Key ไม่ถูกต้อง, หมด quota, หรือ ChromaDB ยังไม่ได้โหลด (กดปุ่ม 'รีเซ็ตฐานข้อมูล Vector' ใน Admin)")
 
 # ==========================================
 # 📸 หน้าตรวจสอบใบเสร็จ (Receipt Verification)

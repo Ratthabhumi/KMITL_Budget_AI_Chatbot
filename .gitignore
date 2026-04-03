@@ -16,17 +16,16 @@ error_log.txt
 models.txt
 pip_packages.txt
 
-# ===== Docs (PDF ต้นฉบับ) =====
-Docs/
-
-# ===== Data & Agent Tooling =====
-Golden_Dataset_Kuk/
+# Docs/
+# MoreData/
 .claude/
 
 # ===== Databases & Generated Outputs =====
 chroma_db/
 chroma_db_v2/
 *.log
-*.json
 !requirements.txt
 !golden_dataset.json
+!evaluation_report.json
+!retrieval_eval_report.json
+!feedback_log.json
