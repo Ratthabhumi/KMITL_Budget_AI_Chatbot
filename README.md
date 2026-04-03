@@ -1,11 +1,7 @@
 # 🎓 KMITL Budget AI Chatbot (CEIPP)
 > **"Intelligent Compliance & Disbursement Analysis for Institutional Finance"**
 
-<<<<<<< Updated upstream
-=======
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_svg.svg)](https://kmitlbudgetaichatbot.streamlit.app/)
 [![Gemma 3](https://img.shields.io/badge/Powered%20by-Gemma_3-blue.svg)](https://blog.google/technology/ai/gemma-3-open-model/)
->>>>>>> Stashed changes
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **CEIPP** is an advanced AI assistant designed to bridge the gap between complex government procurement regulations and institutional operational efficiency at King Mongkut's Institute of Technology Ladkrabang (KMITL). By leveraging **Generative AI** and **Retrieval-Augmented Generation (RAG)**, it automates receipt verification and provides instant, source-grounded regulatory consultation.
