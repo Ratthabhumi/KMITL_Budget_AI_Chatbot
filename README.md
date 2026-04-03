@@ -1,112 +1,115 @@
-# 🎓 KMITL Budget AI Chatbot (Final Version)
-> **"AI-Powered Disbursement Compliance & Intelligence for KMITL"**
+# 🎓 KMITL Budget AI Chatbot (CEIPP)
+> **"Intelligent Compliance & Disbursement Analysis for Institutional Finance"**
 
+<<<<<<< Updated upstream
+=======
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_svg.svg)](https://kmitlbudgetaichatbot.streamlit.app/)
+[![Gemma 3](https://img.shields.io/badge/Powered%20by-Gemma_3-blue.svg)](https://blog.google/technology/ai/gemma-3-open-model/)
+>>>>>>> Stashed changes
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-ระบบผู้ช่วยอัจฉริยะที่ใช้พลังของ **Generative AI** ผสานกับ **RAG (Retrieval-Augmented Generation)** เพื่อตรวจสอบความถูกต้องของใบเสร็จและให้คำปรึกษาด้านระเบียบการเบิกจ่ายงบประมาณของสถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง (สจล.)
+**CEIPP** is an advanced AI assistant designed to bridge the gap between complex government procurement regulations and institutional operational efficiency at King Mongkut's Institute of Technology Ladkrabang (KMITL). By leveraging **Generative AI** and **Retrieval-Augmented Generation (RAG)**, it automates receipt verification and provides instant, source-grounded regulatory consultation.
 
 ---
 
-## 🌟 ฟีเจอร์เด่น (Core Features)
+## 🌟 Core Intelligence Modules
 
-### 1. 👁️ Smart OCR Verification (5-Point Check)
-- ใช้ **Google Gemini 1.5 Flash** ในการสกัดข้อมูลภาษาไทยจากใบเสร็จ (Receipts/Tax Invoices)
-- ตรวจสอบเกณฑ์ **"5 จุดตาย"** อัตโนมัติ (ผู้ขาย, วันที่, ยอดเงิน, รายการ, ลายเซ็น)
-- รองรับทั้งการอัปโหลดไฟล์และ **การเปิดกล้องมือถือ** เพื่อสแกนหน้างาน
+### 1. 👁️ Smart OCR Auditor (Vision AI)
+- **Multimodal Extraction**: Utilizes **Google Gemini 1.5 Flash** to extract high-fidelity Thai text from receipts and tax invoices.
+- **5-Point Compliance Check**: Automated validation of Vendor details, Transaction dates, Total amounts, Buyer identification, and mandatory Signatures/Stamps.
+- **Smart Priority Logic**: Intelligent bypass for certified corporate vendors (e.g., Makro, 7-11), reducing administrative bottlenecks for computer-generated invoices.
 
-### 2. 💬 AI Budget Auditor (RAG Chatbot)
-- ถาม-ตอบเรื่องระเบียบการเบิกจ่ายจากฐานข้อมูล **29 ฉบับ** (PDF)
-- อ้างอิง **เลขหน้า และ รายข้อ** ตามระเบียบจริงของ สจล. และกระทรวงการคลัง
-- ระบบ **Internal Knowledge Retrieval** ที่แม่นยำสูง (ลดการมั่วของ AI)
+### 2. 💬 Regulatory Consultant (RAG Chatbot)
+- **Extensive Knowledge Base**: Indexed repository of **29 official KMITL and Ministry of Finance PDFs**.
+- **Evidence-Grounded Answers**: Every response includes **Filename and Page Number** citations to ensure maximum transparency.
+- **Thai-Optimized Retrieval**: Custom regex-based text cleaning minimizes character corruption, ensuring precise semantic search results for the Thai language.
 
-### 3. 📊 Admin Monitoring & Dashboard
-- ติดตามสถิติการใช้งานและความพึงพอใจของผู้ใช้ (Feedback Log)
-- บันทึกประวัติการส่งใบเสร็จเข้าระบบจำลอง (Approved Receipts Logging)
-- แสดงผลคะแนนประสิทธิภาพ RAG (Faithfulness, Relevance, Precision)
-
-### 4. 📱 Mobile-First Experience
-- ออกแบบ UI ให้รองรับหน้าจอโทรศัพท์มือถือแบบสมบูรณ์
-- ปุ่มกดขนาดใหญ่ ใช้งานง่าย พร้อมระบบสลับธีมสีคลาสสิกขาว-แดง สจล.
+### 3. 📊 Admin Monitoring & AI Evaluation
+- **LLM-as-a-Judge Framework**: Employs **Gemma 3 4B** to quantitatively evaluate AI performance across **Faithfulness, Answer Relevance, and Context Precision**.
+- **Real-time Analytics**: Interactive dashboard visualizing user feedback trends, approval distributions, and RAG accuracy benchmarks.
 
 ---
 
-## 🏗️ สถาปัตยกรรมระบบ (Architecture)
+## 🏗️ System Architecture
+
+The project implements a hybrid offline/online pipeline to ensure both data privacy and high-speed inference.
 
 ```mermaid
 graph TD
-    User((User Interaction)) --> Streamlit[Streamlit Frontend]
-    Streamlit --> Chat[Chatbot Interface]
-    Streamlit --> OCR[Receipt Verification]
+    User((User Interaction)) --> SL[Streamlit Mobile-First UI]
+    SL --> Chat[Chatbot Interface]
+    SL --> OCR[Receipt Verification]
     
-    subgraph "AI Intelligence"
-        OCR --> Gemini[Google Gemini 1.5 Flash - OCR]
-        Chat --> OpenRouter[OpenRouter - RAG Processing]
+    subgraph "AI Intelligence Layer"
+        OCR -->|Vision| Gemini[Gemini 1.5/2.0 Flash]
+        Chat -->|Prompt| OpenRouter[Gemma 3 27B-IT]
+        OpenRouter --> Retriever[Semantic Retriever]
     end
     
     subgraph "Knowledge Retrieval (RAG)"
-        OpenRouter --> ChromaDB[(ChromaDB Vector Store)]
+        Retriever --> ChromaDB[(ChromaDB Vector Store)]
         ChromaDB --> Docs[29 PDF Regulations]
     end
     
-    OCR --> Workflow[Simulated Automated Workflow]
-    Workflow --> Logs[(Approved Logs JSON)]
+    subgraph "Automated Evaluation Model"
+        Chat --> Judge[Gemma 3 4B-IT Judge]
+        Judge --> Dashboard[Admin Monitoring Panel]
+    end
 ```
 
 ---
 
-## 🛠️ เทคโนโลยีที่ใช้ (Tech Stack)
+## 🛠️ Technical Stack
 
-| Component | Technology |
-|---|---|
-| **Frontend** | Streamlit |
-| **Language Model** | Gemma 3 (via OpenRouter API) |
-| **OCR Model** | Google Gemini 1.5 Flash (via Generative AI SDK) |
-| **Vector Database** | ChromaDB (Native Python Embedding) |
-| **Document Loader** | PyPDFLoader (LangChain) |
-| **Communication** | Python 3.10+ |
-
----
-
-## 🚀 การติดตั้งและใช้งาน (Installation)
-
-1. **Clone repository:**
-   ```bash
-   git clone https://github.com/Ratthabhumi/CEIPP.git
-   cd CEIPP
-   ```
-
-2. **ติดตั้ง Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **ตั้งค่า API Keys:**
-   สร้างไฟล์ `.streamlit/secrets.toml` หรือระบุใน Sidebar:
-   ```toml
-   OPENROUTER_API_KEY = "your_openrouter_key"
-   GEMINI_API_KEY = "your_gemini_key"
-   ```
-
-4. **รันแอปพลิเคชัน:**
-   ```bash
-   streamlit run app.py
-   ```
+| Layer | Component | Technology |
+|---|---|---|
+| **Frontend** | UI Framework | Streamlit |
+| **Logic** | Language Model | Gemma 3 (via OpenRouter API) |
+| **Vision** | OCR Engine | Google Gemini 1.5 Flash (Native SDK) |
+| **Storage** | Vector Database | ChromaDB (Persistent SQLite) |
+| **Language** | Thai NLP | sentence-transformers/paraphrase-multilingual |
+| **Deployment** | Infrastructure | Python 3.10+ / Streamlit Community Cloud |
 
 ---
 
-## 📑 รายการเอกสารอ้างอิงในระบบ (Included Regulations)
-ขณะนี้ระบบรองรับระเบียบการเบิกจ่ายทั้งหมด **29 ฉบับ** ครอบคลุม:
-- ✅ ระเบียบพัสดุ สจล. (2560-2562)
-- ✅ ระเบียบค่าใช้จ่ายในการเดินทางไปราชการ
-- ✅ ระเบียบการเบิกจ่ายเงินรางวัลวิจัย
-- ✅ ระเบียบค่าใช้จ่ายในการจัดฝึกอบรม/สัมมนา
-- ✅ ข้อบังคับการเงินและทรัพย์สิน สจล.
+## 🚀 Installation & Setup
+
+### 1. Prerequisite Environments
+```bash
+git clone https://github.com/Ratthabhumi/CEIPP.git
+cd CEIPP
+pip install -r requirements.txt
+```
+
+### 2. Configure API Credentials
+Create a `.streamlit/secrets.toml` file or provide keys via the application sidebar:
+```toml
+OPENROUTER_API_KEY = "your_openrouter_key"
+GEMINI_API_KEY = "your_gemini_key"
+```
+
+### 3. Initialize & Run
+```bash
+streamlit run app.py
+```
+*Note: The system will automatically build the ChromaDB vector database upon first execution (requires 29 PDF documents in the `./Docs` folder).*
 
 ---
 
-## 📬 ติดต่อ / ผู้ดูแล
-- **Project:** KMITL Budget AI Chatbot (CEIPP)
+## 📑 Included Regulations (29 Documents)
+The system currently covers a comprehensive set of KMITL and Public Procurement regulations, including:
+- ✅ KMITL Procurement and Supplies Regulations (2560-2562)
+- ✅ Research Grant Disbursement Rules
+- ✅ Training & Seminar Expenditure Policies
+- ✅ Official Travel Allowance Regulations
+- ✅ Public Procurement and Supplies Management Act (2560)
+
+---
+
+## 📬 Maintenance & Contact
+- **Project Lead:** Ratthabhumi/CEIPP Team
+- **Academic Context:** 01276390 Computer Engineering Project Preparation (School of Engineering)
 - **Status:** Final Production (Ready for Deployment)
 
 ---
-*Created with ❤️ by the CEIPP Team*
+*Developed with ❤️ to modernize institutional finance through Artificial Intelligence.*
