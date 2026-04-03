@@ -1,7 +1,6 @@
 # 🎓 KMITL Budget AI Chatbot (Final Version)
 > **"AI-Powered Disbursement Compliance & Intelligence for KMITL"**
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_svg.svg)](https://kmitlbudgetaichatbot.streamlit.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ระบบผู้ช่วยอัจฉริยะที่ใช้พลังของ **Generative AI** ผสานกับ **RAG (Retrieval-Augmented Generation)** เพื่อตรวจสอบความถูกต้องของใบเสร็จและให้คำปรึกษาด้านระเบียบการเบิกจ่ายงบประมาณของสถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง (สจล.)
