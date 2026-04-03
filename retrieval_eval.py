@@ -30,7 +30,7 @@ DB_DIR         = "./chroma_db"
 GOLDEN_DATASET = "golden_dataset.json"
 OUTPUT_FILE    = "retrieval_eval_report.json"
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-K = 6  # ตรงกับที่ใช้ใน rag_pipeline.py
+K = 10  # ตรงกับที่ใช้ใน rag_pipeline.py
 
 
 # ──────────────────────────────────────────────

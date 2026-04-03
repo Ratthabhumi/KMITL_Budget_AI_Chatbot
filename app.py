@@ -347,6 +347,7 @@ else:
     feedbacks = load_json_safe("feedback_log.json")
     approvals = load_json_safe("approved_logs.json")
     eval_report = load_json_safe("evaluation_report.json")
+    retrieval_report = load_json_safe("retrieval_eval_report.json")
     
     # --- Metrics Grid ---
     st.markdown("### 🎯 ภาพรวมระบบ")
@@ -354,9 +355,36 @@ else:
     m1.metric("จำนวนแชท/ฟีดแบ็ค", len(feedbacks))
     m2.metric("บิลที่ส่งตรวจสอบสำเร็จ", len(approvals))
     
-    good_rates = [f["score"] for f in feedbacks if "score" in f]
+    good_rates = [x.get("score", 0) for x in feedbacks if "score" in x]
     avg_sat = sum(good_rates)/len(good_rates) if good_rates else 0
     m3.metric("คะแนนความพึงพอใจ AI", f"{avg_sat*100:.1f}%")
+    
+    # --- NEW: Retrieval Performance Section (Dynamic Calculation) ---
+    st.markdown("---")
+    st.markdown("### 🔍 ประสิทธิภาพการสืบค้น (Retrieval Performance - Live)")
+    if retrieval_report:
+        per_q = retrieval_report.get("per_question", [])
+        if per_q:
+            # คำนวณค่าเฉลี่ยใหม่จากข้อมูลรายข้อโดยตรง (อัปเดตเป็น @10 ให้ตรงกับ JSON ใหม่)
+            recalls = [q["metrics"].get("Recall@10", 0) for q in per_q]
+            precs = [q["metrics"].get("Precision@10", 0) for q in per_q]
+            mrrs = [q["metrics"].get("MRR", 0) for q in per_q]
+            cosines = [q["metrics"].get("Avg_Cosine", 0) for q in per_q]
+            
+            avg_recall = sum(recalls) / len(recalls)
+            avg_prec = sum(precs) / len(precs)
+            avg_mrr = sum(mrrs) / len(mrrs)
+            avg_cosine = sum(cosines) / len(cosines)
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Avg Recall@10", f"{avg_recall*100:.2f}%")
+            c2.metric("Avg Precision@10", f"{avg_prec*100:.2f}%")
+            c3.metric("Avg MRR", f"{avg_mrr:.4f}")
+            c4.metric("Avg Cosine Score", f"{avg_cosine:.4f}")
+        else:
+            st.info("ไม่พบรายการข้อมูลรายข้อใน Retrieval Report")
+    else:
+        st.info("ยังไม่มีข้อมูลการประเมิน Retrieval ในขณะนี้")
     
     # --- RAG Performance Section (The "Old Way" Restored) ---
     st.markdown("---")

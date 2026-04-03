@@ -21,7 +21,8 @@
 - **Thai-Optimized Retrieval**: Custom regex-based text cleaning minimizes character corruption, ensuring precise semantic search results for the Thai language.
 
 ### 3. 📊 Admin Monitoring & AI Evaluation
-- **LLM-as-a-Judge Framework**: Employs **Gemma 3 4B** to quantitatively evaluate AI performance across **Faithfulness, Answer Relevance, and Context Precision**.
+- **LLM-as-a-Judge Framework**: Employs **Gemma 3 4B** to quantitatively evaluate AI performance across **Faithfulness (4.51/5.0), Answer Relevance (4.45/5.0), and Context Precision (4.02/5.0)**.
+- **Benchmarked Performance**: Achieving **91.64% Avg Recall@10** and **0.75 MRR** across a comprehensive 323-item golden dataset.
 - **Real-time Analytics**: Interactive dashboard visualizing user feedback trends, approval distributions, and RAG accuracy benchmarks.
 
 ---
