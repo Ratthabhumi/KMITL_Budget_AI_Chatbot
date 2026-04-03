@@ -1,0 +1,16 @@
+streamlit
+pandas
+langchain
+langchain-classic
+langchain-community
+langchain-chroma
+langchain-text-splitters
+langchain-huggingface
+langchain-google-genai
+sentence-transformers
+pymupdf
+chromadb
+protobuf<=3.20.3
+scikit-learn
+numpy
+google-generativeai
