@@ -34,10 +34,10 @@ def extract_receipt_data(image_bytes: bytes, api_key: str):
     
     # ระบุชื่อรุ่นที่เสถียรที่สุด (รองรับ API v1 และ v1beta)
     models_to_try = [
-        "gemini-1.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
         "gemini-1.5-pro",
         "gemini-2.0-flash-exp",
-        "gemini-1.0-pro"
     ]
     
     # พยายามตรวจสอบรุ่นที่ใช้เนื้อหาภาพได้ (Vision/Multimodal)

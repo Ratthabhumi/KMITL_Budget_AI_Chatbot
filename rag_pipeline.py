@@ -1,3 +1,4 @@
+import re
 import os
 import glob
 import streamlit as st
@@ -13,6 +14,20 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # ตั้งค่าฐานข้อมูล Vector
 DB_DIR = "./chroma_db_v2"
 DOCS_DIR = "./Docs"
+
+def clean_thai_text(text: str) -> str:
+    """ทำความสะอาดข้อความภาษาไทยที่มีการเว้นวรรคผิดเพี้ยนจากการทำ OCR"""
+    if not text: return ""
+    # แก้ไข 'ก า' -> 'กำ' และกรณีสระอำอื่นๆ
+    text = re.sub(r'([ก-ฮ])\s+า', r'\1า', text)
+    # กรณีสระอำที่แยกออกจากกันชัดเจน เช่น 'ก ำ'
+    text = re.sub(r'([ก-ฮ])\s*ำ', r'\1ำ', text)
+    # ลบการเว้นวรรคที่เกิดจากการขึ้นบรรทัดใหม่กลางคำ (OCR Artifacts)
+    text = re.sub(r'([ก-ฮ])\s+([ะ-ู])', r'\1\2', text)
+    text = re.sub(r'([ก-ฮ])\s+([่-๋])', r'\1\2', text)
+    # ลบช่องว่างที่มากเกินไป
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
 def initialize_vector_db(api_key):
     """อ่านไฟล์ PDF ทั้งหมดในโฟลเดอร์ Docs และสร้างฐานข้อมูลเวกเตอร์ ChromaDB"""
@@ -31,7 +46,11 @@ def initialize_vector_db(api_key):
     for i, pdf_file in enumerate(pdf_files):
         try:
             loader = PyMuPDFLoader(pdf_file)
-            documents.extend(loader.load())
+            loaded_docs = loader.load()
+            # ทำความสะอาดข้อความทันทีหลังจากโหลด
+            for doc in loaded_docs:
+                doc.page_content = clean_thai_text(doc.page_content)
+            documents.extend(loaded_docs)
         except Exception as e:
             st.warning(f"ไม่สามารถโหลดไฟล์ {pdf_file} ได้: {e}")
             
@@ -61,10 +80,13 @@ def initialize_vector_db(api_key):
     st.success(f"ดำเนินการเสร็จสิ้น! โหลดเอกสารทั้งหมด {len(pdf_files)} ไฟล์ (รวม {len(splits)} chunks) เรียบร้อยแล้ว")
     return True
 
-def get_qa_chain(api_key, mode="chat"):
+def get_qa_chain(api_key, gemini_api_key=None, mode="chat", provider=None):
     """
     สร้าง RAG Chain สำหรับการตอบคำถาม
-    mode: "chat" สำหรับคำถามทั่วไป, "audit" สำหรับการตรวจสอบใบเสร็จ
+    api_key: OpenRouter API Key
+    gemini_api_key: Google Gemini API Key
+    mode: "chat" หรือ "audit"
+    provider: "openrouter" หรือ "gemini" (บังคับใช้ตัวใดตัวหนึ่ง)
     """
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
@@ -73,32 +95,64 @@ def get_qa_chain(api_key, mode="chat"):
         return None
         
     vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
+    retriever_obj = vectorstore.as_retriever(search_kwargs={"k": 10})
     
-    # ระบบ Fallback สำหรับโมเดลฟรีใน OpenRouter
-    models_to_try = [
-        "google/gemma-3-27b-it:free",
-        "google/gemma-3-4b-it:free",
-        "google/gemma-2-9b-it:free",
-        "mistralai/mistral-7b-instruct:free"
-    ]
+    # --- เพิ่มการทำความสะอาดข้อความทันที (Immediate Cleaning) ---
+    from langchain_core.runnables import RunnableLambda
+    def wrap_clean_docs(docs):
+        for doc in docs:
+            doc.page_content = clean_thai_text(doc.page_content)
+        return docs
+    retriever = retriever_obj | RunnableLambda(wrap_clean_docs)
     
     llm = None
-    for model_name in models_to_try:
-        try:
-            llm = ChatOpenAI(
-                model=model_name,
-                base_url="https://openrouter.ai/api/v1",
-                api_key=api_key,
-                temperature=0,
-                max_retries=1
-            )
-            break
-        except:
-            continue
+    
+    # 1. พยายามใช้ OpenRouter (ถ้าไม่ได้บังคับเป็น gemini)
+    if (not provider or provider == "openrouter") and api_key:
+        models_to_try = [
+            "google/gemma-3-27b-it:free",
+            "google/gemma-3-4b-it:free",
+            "google/gemma-2-9b-it:free"
+        ]
+        
+        for model_name in models_to_try:
+            try:
+                llm = ChatOpenAI(
+                    model=model_name,
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=api_key,
+                    temperature=0,
+                    max_retries=1 
+                )
+                if llm: break
+            except:
+                continue
 
+    # 2. พยายามใช้ Gemma/Gemini ผ่าน Google AI Studio key (ถ้าไม่ได้บังคับเป็น openrouter)
+    if not llm and (not provider or provider == "gemini") and gemini_api_key:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        google_models_to_try = [
+            "gemma-3-27b-it",
+            "gemma-3-4b-it",
+            "gemini-2.0-flash",
+        ]
+        for model_name in google_models_to_try:
+            try:
+                is_gemma = model_name.startswith("gemma")
+                llm = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    google_api_key=gemini_api_key,
+                    temperature=0,
+                    max_retries=2,
+                    convert_system_message_to_human=is_gemma
+                )
+                break
+            except:
+                continue
+
+    # สุดท้ายถ้ายังไม่ได้อะไรเลย ให้ Error
     if not llm:
-        llm = ChatOpenAI(model=models_to_try[0], base_url="https://openrouter.ai/api/v1", api_key=api_key)
+        return None
 
     # --- เลือก Prompt ตามโหมดการใช้งาน (Brain Refresh) ---
     if mode == "audit":
@@ -120,13 +174,21 @@ def get_qa_chain(api_key, mode="chat"):
     else:
         system_message = (
             "### [ROLE: HELPFUL CONSULTANT]\n"
-            "คุณคือ AI ที่ปรึกษาด้านระเบียบการพัสดุและการเงิน ของ สจล. คุณจะตอบคำถามทั่วไปอย่างสุภาพและให้ข้อมูลที่ถูกต้อง\n\n"
+            "คุณคือ AI ที่ปรึกษาด้านระเบียบการพัสดุและการเงิน ของ สจล. คุณจะตอบคำถามอย่างสุภาพและแม่นยำ\n\n"
+            "### [KMITL/Public Procurement Ground Truth]\n"
+            "- หลักการจัดซื้อจัดจ้าง (พรบ. 2560 มาตรา 8): ต้องประกอบด้วย 4 ประการ:\n"
+            "  1. ความคุ้มค่า (Value for Money)\n"
+            "  2. ความโปร่งใส (Transparency)\n"
+            "  3. ประสิทธิภาพและประสิทธิผล (Efficiency and Effectiveness)\n"
+            "  4. การตรวจสอบได้ (Accountability)\n"
+            "- ราคากลาง (Median Price): หมายถึง ราคาที่ใช้เป็นฐานในการเปรียบเทียบราคาที่ผู้เสนอราคาได้ยื่นเสนอมา ซึ่งสามารถจัดซื้อจัดจ้างได้จริง โดยอ้างอิงตามลำดับ (1. คณะกรรมการราคากลาง, 2. กรมบัญชีกลาง, 3. สำนักงบประมาณ, 4. สืบราคาตลาด, 5. ราคาซื้อล่าสุดใน 2 ปี)\n\n"
             "### [RULES]\n"
-            "1. ตอบคำถามตามระเบียบจาก <context> อ้างอิงเลขหน้าหรือข้อให้ชัดเจน\n"
-            "2. **ห้าม** พูดเรื่อง [STATUS: PASS/FAIL] หรือกฎลำดับความสำคัญ (Priority Rules) ของการตรวจบิลในโหมดนี้เด็ดขาด\n"
-            "3. หากไม่พบข้อมูล ให้บอกว่าไม่พบในระเบียบ สจล. และแนะนำให้ติดต่อกองคลัง\n"
-            "4. รักษามารยาทและภาพลักษณ์ที่ดีของสถาบัน\n\n"
-            "--- ลืมกฎการตรวจบิล (Audit Rules) ทั้งหมด และเน้นให้คำแนะนำที่ครอบคลุม ---"
+            "1. ตอบคำถามตามระเบียบจากข้อมูลที่ได้รับ (Context) อ้างอิงเลขหน้าหรือข้อให้ชัดเจน\n"
+            "2. **ห้าม** พูดเรื่อง [STATUS: PASS/FAIL] หรือกฎลำดับความสำคัญ (Priority Rules) ในโหมดนี้เด็ดขาด\n"
+            "3. หากไม่พบข้อมูล ให้บอกว่าไม่พบในระเบียบ สจล. และแนะนำให้ติดต่อกองคลัง สจล.\n"
+            "4. รักษามารยาทและภาพลักษณ์ที่ดีของสถาบัน\n"
+            "5. ปิดท้ายด้วยคำแนะนำให้ติดต่อ 'กองคลัง สจล.' สำหรับรายละเอียดเพิ่มเติมเสมอ\n\n"
+            "--- เน้นให้คำแนะนำที่ครอบคลุมและอ้างอิงตามเนื้อหาในเอกสารที่ค้นหาได้จริง ---"
         )
         human_message = "Context: {context}\n\nคำถามจากผู้ใช้: {input}"
 

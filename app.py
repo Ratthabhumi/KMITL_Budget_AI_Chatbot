@@ -92,6 +92,46 @@ def save_feedback(question, answer, is_upvote):
     })
     save_json_safe("feedback_log.json", data)
 
+def display_assistant_message(content, sources=None, index=0, chat_history=None):
+    """
+    Unified function to display assistant messages with content, sources, and feedback buttons.
+    """
+    st.markdown(content)
+    
+    if sources:
+        with st.expander("📄 แหล่งอ้างอิงเอกสารที่ใช้"):
+            for d in sources:
+                source_file = os.path.basename(d.metadata.get("source", "Unknown File"))
+                page_num = d.metadata.get("page", None)
+                page_str = f" (หน้า {page_num+1})" if page_num is not None else ""
+                
+                header = f"**📌 {source_file}{page_str}**"
+                st.markdown(f'<div class="reference-card">{header}<br>{d.page_content}</div>', unsafe_allow_html=True)
+    
+    # --- ปุ่ม Feedback (👍/👎) ---
+    c1, c2, c3 = st.columns([1, 1, 10])
+    
+    # ดึงค่าที่เคยกดไว้ (ถ้ามี)
+    already_voted = st.session_state.get("feedback", {}).get(index)
+    
+    if c1.button("👍", key=f"up_{index}", disabled=(already_voted is not None)):
+        if chat_history and index-1 < len(chat_history):
+            save_feedback(chat_history[index-1]["content"], content, True)
+            if "feedback" not in st.session_state: st.session_state.feedback = {}
+            st.session_state.feedback[index] = "up"
+            st.toast("บันทึกการตอบรับเชิงบวกเรียบร้อย! ✨")
+            time.sleep(0.5)
+            st.rerun()
+    
+    if c2.button("👎", key=f"down_{index}", disabled=(already_voted is not None)):
+        if chat_history and index-1 < len(chat_history):
+            save_feedback(chat_history[index-1]["content"], content, False)
+            if "feedback" not in st.session_state: st.session_state.feedback = {}
+            st.session_state.feedback[index] = "down"
+            st.toast("บันทึกคำติชมเชิงลบแล้ว เราจะปรับปรุงให้เก่งขึ้นครับ! 🛠️")
+            time.sleep(0.5)
+            st.rerun()
+
 # ==========================================
 # ⚙️ Sidebar Navigation & Settings
 # ==========================================
@@ -132,25 +172,20 @@ if "💬" in page:
     st.markdown("_ถามเกี่ยวกับขั้นตอนการเบิกจ่าย พัสดุ หรือกฎเกณฑ์ สจล._")
 
     if "messages" not in st.session_state: st.session_state.messages = []
+    if "feedback" not in st.session_state: st.session_state.feedback = {}
 
     # Display chat messages
     for i, m in enumerate(st.session_state.messages):
         with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-            if m["role"] == "assistant":
-                if "sources" in m and m["sources"]:
-                    with st.expander("📄 แหล่งอ้างอิงเอกสารที่ใช้"):
-                        for d in m["sources"]:
-                            st.markdown(f'<div class="reference-card">{d.page_content}</div>', unsafe_allow_html=True)
-                
-                # --- ปุ่ม Feedback (👍/👎) ---
-                c1, c2, c3 = st.columns([1, 1, 10])
-                if c1.button("👍", key=f"up_{i}"):
-                    save_feedback(st.session_state.messages[i-1]["content"], m["content"], True)
-                    st.toast("บันทึกการตอบรับเชิงบวกเรียบร้อย! ✨")
-                if c2.button("👎", key=f"down_{i}"):
-                    save_feedback(st.session_state.messages[i-1]["content"], m["content"], False)
-                    st.toast("บันทึกคำติชมเชิงลบแล้ว เราจะปรับปรุงให้เก่งขึ้นครับ! 🛠️")
+            if m["role"] == "user":
+                st.markdown(m["content"])
+            else:
+                display_assistant_message(
+                    m["content"], 
+                    sources=m.get("sources"), 
+                    index=i, 
+                    chat_history=st.session_state.messages
+                )
 
     # Chat Input
     if prompt := st.chat_input("ตัวอย่าง: เบิกค่าที่พักได้คืนละเท่าไหร่..."):
@@ -159,11 +194,38 @@ if "💬" in page:
 
         with st.chat_message("assistant"):
             with st.spinner("AI กำลังค้นหาระเบียบที่เกี่ยวข้อง..."):
-                qa = get_qa_chain(openrouter_api_key, mode="chat")
-                res = qa.invoke({"input": prompt})
-                ans, ctx = res["answer"], res.get("context", [])
-                st.markdown(ans)
-                st.session_state.messages.append({"role": "assistant", "content": ans, "sources": ctx})
+                providers_to_try = ["openrouter", "gemini"]
+                success = False
+                
+                for p_name in providers_to_try:
+                    try:
+                        qa = get_qa_chain(openrouter_api_key, gemini_api_key=gemini_api_key, mode="chat", provider=p_name)
+                        if qa:
+                            res = qa.invoke({"input": prompt})
+                            ans, ctx = res["answer"], res.get("context", [])
+                            
+                            # Live Rendering
+                            display_assistant_message(
+                                ans, 
+                                sources=ctx, 
+                                index=len(st.session_state.messages), 
+                                chat_history=st.session_state.messages
+                            )
+                            
+                            st.session_state.messages.append({"role": "assistant", "content": ans, "sources": ctx})
+                            success = True
+                            break
+                    except Exception as e:
+                        if p_name == providers_to_try[-1]: # If last provider also fails
+                            if "429" in str(e) or "rate_limit" in str(e).lower():
+                                st.error("⚠️ AI ทุกระบบมีการเรียกใช้งานหนาแน่นเกินไปในขณะนี้ (Rate Limit) กรุณารอสักครู่แล้วลองใหม่อีกครั้ง")
+                            else:
+                                st.error(f"เกิดข้อผิดพลาดรุนแรง: {e}")
+                        else:
+                            continue # Try next provider
+                
+                if not success and not st.session_state.get("error_shown"):
+                    st.warning("ไม่สามารถเชื่อมต่อกับ AI ได้ในขณะนี้ กรุณาตรวจสอบ API Key ทั้งสองระบบ")
 
 # ==========================================
 # 📸 หน้าตรวจสอบใบเสร็จ (Receipt Verification)
@@ -190,9 +252,25 @@ elif "📸" in page:
                     st.error(f"ระบบ OCR ผิดพลาด: {ocr['error']}")
                 else:
                     st.session_state.ocr = ocr
-                    qa = get_qa_chain(openrouter_api_key, mode="audit")
-                    with st.spinner("กำลังตรวจสอบกับระเบียบสถาบัน..."):
-                        st.session_state.v_res = verify_receipt_rules(qa, ocr)
+                    providers_to_try = ["openrouter", "gemini"]
+                    success = False
+                    
+                    for p_name in providers_to_try:
+                        try:
+                            qa = get_qa_chain(openrouter_api_key, gemini_api_key=gemini_api_key, mode="audit", provider=p_name)
+                            if qa:
+                                with st.spinner(f"กำลังตรวจสอบกับระเบียบสถาบัน ({p_name})..."):
+                                    st.session_state.v_res = verify_receipt_rules(qa, ocr)
+                                    success = True
+                                    break
+                        except Exception as e:
+                            if p_name == providers_to_try[-1]:
+                                st.error(f"ไม่สามารถเชื่อมต่อ AI สำหรับการตรวจสอบได้ทุกระบบ: {e}")
+                            else:
+                                continue # Try next
+                    
+                    if not success:
+                        st.info("กรุณาตรวจสอบการตั้งค่า API Key หรือเว้นระยะเวลาการเรียกใช้งาน")
 
     with col_res:
         st.markdown("### 🚦 ผลการตรวจสอบ")
