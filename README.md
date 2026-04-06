@@ -1,7 +1,7 @@
 ---
 title: KMITL Budget AI Chatbot
 emoji: 🎓
-colorFrom: orange
+colorFrom: indigo
 colorTo: blue
 sdk: docker
 app_file: streamlit_app.py
